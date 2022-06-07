@@ -1,0 +1,4 @@
+outs:
+- md5: 369fea84048ac5a4411ff9191c42e693
+  size: 445836672
+  path: Earl_20190716_CST_tensors.hdf5
