@@ -24,7 +24,7 @@ from os import path
 from lfads_tf2.models import LFADS
 
 # create and train the LFADS model
-cfg_path = path.join("configs", "lfads_config_Earl_20190716_CST.yaml")
+cfg_path = path.join("configs", "lfads_config_Earl_20190716_CO_10ms.yaml")
 model = LFADS(cfg_path=cfg_path)
 model.train()
 model.sample_and_average()

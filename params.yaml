@@ -1,4 +1,6 @@
 lfads_prep:
-  window_len: 300
-  overlap: 100
-  bin_size: 0.002
+  window_len: 60
+  overlap: 20
+  bin_size: 0.010
+analysis:
+  num_dims: 10

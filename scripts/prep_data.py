@@ -3,6 +3,7 @@ This module preps a neural tensor from trial data for LFADS training.
 """
 
 import src.data
+import src.lfads_helpers
 import yaml
 
 with open("params.yaml", "r") as params_file:
@@ -21,14 +22,14 @@ def prep_and_save_data(td, save_path):
     save_path : str
         Path to save the trial data file.
     """
-    tensor_list, trial_ids = src.data.prep_neural_tensors(
+    tensor_list, trial_ids = src.lfads_helpers.prep_neural_tensors(
         td,
         signal="M1_spikes",
         bin_size=params["bin_size"],
         window_len=params["window_len"],
         overlap=params["overlap"],
     )
-    src.data.write_tensor_to_hdf(
+    src.lfads_helpers.write_tensor_to_hdf(
         tensor_list, trial_ids, save_path,
     )
 
