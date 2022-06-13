@@ -77,12 +77,12 @@ def write_tensor_to_hdf(tensor_list, trial_ids, filename):
     )
 
     with h5py.File(filename, "a") as hf:
-        hf.create_dataset("train_data", data=train_data)
-        hf.create_dataset("valid_data", data=valid_data)
-        hf.create_dataset("train_inds", data=train_inds)
-        hf.create_dataset("valid_inds", data=valid_inds)
-        hf.create_dataset("train_trial_id", data=train_trial_id)
-        hf.create_dataset("valid_trial_id", data=valid_trial_id)
+        hf.create_dataset("train_data", data=train_data, compression="gzip")
+        hf.create_dataset("valid_data", data=valid_data, compression="gzip")
+        hf.create_dataset("train_inds", data=train_inds, compression="gzip")
+        hf.create_dataset("valid_inds", data=valid_inds, compression="gzip")
+        hf.create_dataset("train_trial_id", data=train_trial_id, compression="gzip")
+        hf.create_dataset("valid_trial_id", data=valid_trial_id, compression="gzip")
 
 
 def merge_tensor_into_trials(tensor, trial_ids, overlap):
