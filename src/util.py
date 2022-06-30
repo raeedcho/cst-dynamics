@@ -1,4 +1,5 @@
 import pyaldata
+import pandas as pd
 
 
 def generate_realtime_epoch_fun(
@@ -41,3 +42,31 @@ def generate_realtime_epoch_fun(
         )
 
     return epoch_fun
+
+def crystallize_dataframe(td,sigs=['M1_rates','lfads_rates','hand_vel']):
+    '''
+    Transforms a pyaldata-style dataframe into a normal one, where each row
+    is a time point in a trial. This is useful for some manipulations,
+    especially those that involve melting the dataframe.
+
+    Arguments:
+        - td (pd.DataFrame): dataframe in form of PyalData
+        - cols (list of str): columns to include in the crystallized dataframe
+
+    Returns:
+        - (pd.DataFrame): crystallized dataframe with hierarchical index on both axes:
+            axis 0: trial id, time bin in trial
+            axis 1: signal name, signal dimension
+    '''
+    # TODO: check that signals are in the dataframe and are valid signals
+
+    df = pd.concat(
+        [
+            pd.concat([pd.DataFrame(trial[sig]) for sig in sigs], axis=1, keys=sigs) 
+            for _,trial in td.iterrows()
+        ],
+        axis=0,
+        keys=td['trial_id'],
+    )
+    df.index.rename('Time bin',level=1,inplace=True)
+    return df
