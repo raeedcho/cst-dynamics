@@ -4,3 +4,4 @@ lfads_prep:
   bin_size: 0.010
 analysis:
   num_dims: 10
+  bin_size: 0.030
