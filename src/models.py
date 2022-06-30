@@ -98,4 +98,9 @@ class SSA(object):
             self.model = ssa.models.LowRNorm(input_size, output_size, self.ssa_params['R'],U_init,b_init)
 
         self.model.load_state_dict(state_dict)
+        
+        # use GPU if available
+        if torch.cuda.is_available():
+            self.model.cuda()
+
         self.model.eval()
