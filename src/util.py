@@ -70,3 +70,24 @@ def crystallize_dataframe(td,sigs=['M1_rates','lfads_rates','hand_vel']):
     )
     df.index.rename('Time bin',level=1,inplace=True)
     return df
+
+def extract_metaframe(td,metacols=['trial_id']):
+    '''
+    Extracts a metaframe from a trial dataframe.
+
+    Arguments:
+        - td (pd.DataFrame): dataframe in form of PyalData
+        - metacols (list of str): columns to include in the metaframe
+            Note: if trial_id is not in metacols, it will be added
+
+    Returns:
+        - (pd.DataFrame): metaframe with hierarchical index on both axes:
+            axis 0: trial id
+            axis 1: column name
+    '''
+    if 'trial_id' not in metacols:
+        metacols.insert(0,'trial_id')
+
+    meta_df =  pd.concat([td[col] for col in metacols], axis=1, keys=metacols).set_index('trial_id')
+    meta_df.columns = pd.MultiIndex.from_product([['meta'],meta_df.columns])
+    return meta_df
