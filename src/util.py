@@ -89,5 +89,6 @@ def extract_metaframe(td,metacols=['trial_id']):
         metacols.insert(0,'trial_id')
 
     meta_df =  pd.concat([td[col] for col in metacols], axis=1, keys=metacols).set_index('trial_id')
-    meta_df.columns = pd.MultiIndex.from_product([['meta'],meta_df.columns])
+    #meta_df.columns = pd.MultiIndex.from_product([['meta'],meta_df.columns])
+    meta_df.columns = pd.MultiIndex.from_tuples(list(zip(meta_df.columns,meta_df.columns)))
     return meta_df
