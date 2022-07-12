@@ -145,7 +145,7 @@ def add_lfads_rates(
     return trial_data
 
 @pyaldata.copy_td
-def prep_data_with_lfads(td, task, lfads_params):
+def prep_data_with_lfads(td, task, lfads_params, analysis_params):
     td_task = td.groupby('task').get_group(task).copy()
 
     td_task = pyaldata.combine_time_bins(td_task,int(lfads_params['bin_size']/td_task['bin_size'].values[0]))
@@ -185,10 +185,13 @@ def prep_data_with_lfads(td, task, lfads_params):
         ) for spikes,bin_size in zip(td_task['M1_spikes'],td_task['bin_size'])
     ]
 
-    M1_pca_model = PCA()
+    M1_pca_model = PCA(n_components=analysis_params['num_dims'])
     td_task = pyaldata.dim_reduce(td_task,M1_pca_model,'M1_rates','M1_pca')
     
-    lfads_pca_model = PCA()
+    lfads_pca_model = PCA(n_components=analysis_params['num_dims'])
     td_task = pyaldata.dim_reduce(td_task,lfads_pca_model,'lfads_rates','lfads_pca')
+
+    # rebin at larger bin size
+    td_task = pyaldata.combine_time_bins(td_task, n_bins=int(analysis_params['bin_size']/td_task['bin_size'].values[0]))
 
     return td_task
