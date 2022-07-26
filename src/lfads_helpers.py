@@ -185,6 +185,10 @@ def prep_data_with_lfads(td, task, lfads_params, analysis_params):
         ) for spikes,bin_size in zip(td_task['M1_spikes'],td_task['bin_size'])
     ]
 
+    # Note: this runs soft normalization on each task individually instead of across tasks
+    # TODO: fix this to make soft normalization across tasks (will have to deal with nans somehow)
+    td_task = pyaldata.soft_normalize_signal(td_task,signals=['M1_rates','lfads_rates'])
+
     M1_pca_model = PCA(n_components=analysis_params['num_dims'])
     td_task = pyaldata.dim_reduce(td_task,M1_pca_model,'M1_rates','M1_pca')
     
