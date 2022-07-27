@@ -186,3 +186,40 @@ def add_trial_time(trial_data, ref_event=None):
 
     return trial_data
 
+@pyaldata.copy_td
+def remove_bad_trials(trial_data, rate_thresh=350,verbose=False):
+    '''
+    Remove trials with neural artifacts (mostly in Prez when he moves his head).
+    These artifacts look like very high firing rates for a hundred milliseconds or so.
+    '''
+
+    bad_trials = []
+
+    # bin trial data at 100 ms (if it's not already binned so much)
+    if all(trial_data['bin_size']<=0.05): # if bin_size is already greater than 0.05, don't bin
+        td_temp = pyaldata.combine_time_bins(trial_data, n_bins=int(0.1/trial_data['bin_size'].values[0]))
+    else:
+        td_temp = trial_data.copy()
+
+    td_temp = pyaldata.add_firing_rates(td_temp,method='bin')
+    array_names = [name.replace('_rates', '') for name in td_temp.columns if name.endswith('_rates')]
+
+    # find trials with high firing rates
+    # for id, trial in td_temp.iterrows():
+    #     for array_name in array_names:
+    #         if any(trial[f'{array_name}_rates']>rate_thresh):
+    #             bad_trials.append(id)
+    #             break
+
+    bad_trials = {
+        id
+        for id,trial in td_temp.iterrows()
+        for array_name in array_names
+        if (trial[f'{array_name}_rates']>rate_thresh).any()
+    }
+
+    if verbose:
+        print(f'{len(bad_trials)} trials with high firing rates removed. Dropping trials with IDs:')
+        print(td_temp.loc[bad_trials,"trial_id"].values)
+
+    return trial_data.drop(index=bad_trials)
