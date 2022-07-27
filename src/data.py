@@ -4,7 +4,7 @@ import numpy as np
 import scipy
 
 
-def load_clean_data(filepath, verbose=False):
+def load_clean_data(filepath, verbose=False, keep_unsorted=False):
     """
     Loads and cleans COCST trial data, given a file query
     inputs:
@@ -28,26 +28,31 @@ def load_clean_data(filepath, verbose=False):
     # td = fill_kinematic_signals(td)
 
     # neural data considerations
-    unit_guide = td.loc[td.index[0], "M1_unit_guide"]
-    if unit_guide.shape[0] > 0:
-        # remove unsorted neurons (unit number <=1)
-        bad_units = unit_guide[:, 1] <= 1
+    array_names = [name.replace('_spikes', '') for name in td.columns if name.endswith('_spikes')]
+    for array in array_names:
+        unit_guide = td.loc[td.index[0],f'{array}_unit_guide']
+        if unit_guide.shape[0] > 0:
+            # remove unsorted neurons (unit number <=1)
+            if keep_unsorted:
+                bad_units = unit_guide[:, 1] <= 0
+            else:
+                bad_units = unit_guide[:, 1] <= 1
 
-        # for this particular file only, remove correlated neurons...
-        if td.loc[td.index[0], "session_date"] == pd.to_datetime("2018/06/26"):
-            corr_units = np.array([[8, 2], [64, 2]])
-            bad_units = bad_units | (
-                np.in1d(unit_guide[:, 0], corr_units[:, 0])
-                & np.in1d(unit_guide[:, 1], corr_units[:, 1])
+            # for this particular file only, remove correlated neurons...
+            if td.loc[td.index[0], "session_date"] == pd.to_datetime("2018/06/26"):
+                corr_units = np.array([[8, 2], [64, 2]])
+                bad_units = bad_units | (
+                    np.in1d(unit_guide[:, 0], corr_units[:, 0])
+                    & np.in1d(unit_guide[:, 1], corr_units[:, 1])
+                )
+
+            # mask out bad neural data
+            td[f'{array}_spikes'] = [spikes[:, ~bad_units] for spikes in td[f'{array}_spikes']]
+            td[f'{array}_unit_guide'] = [guide[~bad_units, :] for guide in td[f'{array}_unit_guide']]
+
+            td = pyaldata.remove_low_firing_neurons(
+                td, f'{array}_spikes', 0.1, divide_by_bin_size=True, verbose=verbose
             )
-
-        # mask out bad neural data
-        td["M1_spikes"] = [spikes[:, ~bad_units] for spikes in td["M1_spikes"]]
-        td["M1_unit_guide"] = [guide[~bad_units, :] for guide in td["M1_unit_guide"]]
-
-        td = pyaldata.remove_low_firing_neurons(
-            td, "M1_spikes", 0.1, divide_by_bin_size=True, verbose=verbose
-        )
 
     return td
 
@@ -223,3 +228,4 @@ def remove_bad_trials(trial_data, rate_thresh=350,verbose=False):
         print(td_temp.loc[bad_trials,"trial_id"].values)
 
     return trial_data.drop(index=bad_trials)
+    
