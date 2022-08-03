@@ -1,6 +1,34 @@
 import pyaldata
 import pandas as pd
 
+@pyaldata.copy_td
+def split_trials_by_epoch(trial_data,epoch_dict,epoch_col_name='epoch'):
+    '''
+    Split trial_data by epochs
+    
+    Arguments:
+        trial_data (DataFrame): PyalData formatted structure of neural/behavioral data
+        epoch_dict (dict): dictionary of epoch functions to pass into
+            pyaldata.restrict_to_interval, with keys as epoch names
+        epoch_col_name (str): name of column to add to trial_data with epoch names
+        
+    Returns:
+        DataFrame: trial_data with entries for each specified epoch of each trial
+
+    TODO: make this work for exploded dataframes
+    '''
+    td_epoch_list = []
+    for epoch_name,epoch_fun in epoch_dict.items():
+        temp_td = pyaldata.restrict_to_interval(
+            trial_data,
+            epoch_fun=epoch_fun,
+        )
+        temp_td[epoch_col_name] = epoch_name
+        td_epoch_list.append(temp_td)
+    
+    td_epoch = pd.concat(td_epoch_list).reset_index(drop=True)
+
+    return td_epoch
 
 def generate_realtime_epoch_fun(
     start_point_name, end_point_name=None, rel_start_time=0, rel_end_time=0
