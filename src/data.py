@@ -229,3 +229,10 @@ def remove_bad_trials(trial_data, rate_thresh=350,verbose=False):
 
     return trial_data.drop(index=bad_trials)
     
+def rebin_data(trial_data, new_bin_size):
+    '''
+    Re-bins the trial data at a new bin size.
+    
+    Note: this is a wrapper on pyaldata.combine_time_bins.
+    '''
+    return pyaldata.combine_time_bins(trial_data, n_bins=int(new_bin_size/trial_data['bin_size'].values[0]))
