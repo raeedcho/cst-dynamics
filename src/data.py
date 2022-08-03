@@ -28,6 +28,7 @@ def load_clean_data(filepath, verbose=False, keep_unsorted=False):
     # td = fill_kinematic_signals(td)
 
     # neural data considerations
+    td = remove_bad_trials(td,rate_thresh=350,verbose=verbose)
     array_names = [name.replace('_spikes', '') for name in td.columns if name.endswith('_spikes')]
     for array in array_names:
         unit_guide = td.loc[td.index[0],f'{array}_unit_guide']
@@ -196,9 +197,15 @@ def remove_bad_trials(trial_data, rate_thresh=350,verbose=False):
     '''
     Remove trials with neural artifacts (mostly in Prez when he moves his head).
     These artifacts look like very high firing rates for a hundred milliseconds or so.
-    '''
 
-    bad_trials = []
+    Arguments:
+        - trial_data: DataFrame in form of PyalData
+        - rate_thresh: threshold for firing rate (Hz)
+        - verbose: print out information about removed trials
+
+    Returns:
+        - trial_data: DataFrame with bad trials removed
+    '''
 
     # bin trial data at 100 ms (if it's not already binned so much)
     if all(trial_data['bin_size']<=0.05): # if bin_size is already greater than 0.05, don't bin
