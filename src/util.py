@@ -71,7 +71,7 @@ def generate_realtime_epoch_fun(
 
     return epoch_fun
 
-def crystallize_dataframe(td,sigs=['M1_rates','lfads_rates','hand_vel']):
+def crystallize_dataframe(td,sig_guide=None):
     '''
     Transforms a pyaldata-style dataframe into a normal one, where each row
     is a time point in a trial. This is useful for some manipulations,
@@ -79,7 +79,10 @@ def crystallize_dataframe(td,sigs=['M1_rates','lfads_rates','hand_vel']):
 
     Arguments:
         - td (pd.DataFrame): dataframe in form of PyalData
-        - cols (list of str): columns to include in the crystallized dataframe
+        - sig_guide (dict): dictionary of signals with keys corresponding to the signal names
+            in the pyaldata dataframe and values corresponding to the names of each column
+            of the individual signal in the dataframe. If None, all signals are included,
+            with columns labeled 0-N, where N is the number of columns in the signal.
 
     Returns:
         - (pd.DataFrame): crystallized dataframe with hierarchical index on both axes:
@@ -88,9 +91,17 @@ def crystallize_dataframe(td,sigs=['M1_rates','lfads_rates','hand_vel']):
     '''
     # TODO: check that signals are in the dataframe and are valid signals
 
+    if sig_guide is None:
+        sig_guide = {sig: None for sig in pyaldata.get_time_varying_fields(td)}
+
+    if type(sig_guide) is list:
+        sig_guide = {sig: None for sig in sig_guide}
+
+    assert type(sig_guide) is dict, "sig_guide must be a dictionary"
+
     df = pd.concat(
         [
-            pd.concat([pd.DataFrame(trial[sig]) for sig in sigs], axis=1, keys=sigs) 
+            pd.concat([pd.DataFrame(trial[sig],columns=guide) for sig,guide in sig_guide.items()], axis=1, keys=sig_guide.keys()) 
             for _,trial in td.iterrows()
         ],
         axis=0,
