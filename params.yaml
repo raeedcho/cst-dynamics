@@ -6,4 +6,4 @@ analysis:
   num_dims: 10
   bin_size: 0.030
 inspection:
-  bin_size: 0.050
+  bin_size: 0.010
