@@ -50,8 +50,23 @@ def make_trial_raster(trial, ax=None, sig='M1_spikes', events=None, ref_event_id
 
     if events is not None:
         for event in events:
-            event_time = bins_to_time(trial[event])
-            ax.plot(event_time*np.array([1,1]),[0,trial[sig].shape[1]],'--r')
+            event_times = bins_to_time(trial[event])
+            event_times = event_times[~np.isnan(event_times)]
+            if event_times.size == 1:
+                ax.plot(
+                    event_times * np.array([1,1]),
+                    [0,trial[sig].shape[1]],
+                    '--r'
+                )
+                ax.text(event_times, trial[sig].shape[1]+2, event.replace('idx_',''), color='r', fontsize=12, rotation='vertical')
+            elif event_times.size > 1:
+                for ev_t in event_times:
+                    ax.plot(
+                        ev_t * np.array([1,1]),
+                        [0,trial[sig].shape[1]],
+                        '--r'
+                    )
+                    ax.text(ev_t, trial[sig].shape[1]+2, event.replace('idx_',''), color='r', fontsize=12, rotation='vertical')
 
     ax.set_yticks([])
     sns.despine(ax=ax,left=True,bottom=False,trim=True,offset=10)
