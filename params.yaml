@@ -7,3 +7,5 @@ analysis:
   bin_size: 0.030
 inspection:
   bin_size: 0.010
+  keep_unsorted: True
+  verbose: True

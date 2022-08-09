@@ -1,11 +1,74 @@
 import pyaldata
 import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
-from . import subspace_tools,data
+from . import subspace_tools,data,util
 
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
 from sklearn.decomposition import PCA
+
+def extract_td_epochs(td):
+    '''
+    Prepare data for hold-time PCA and LDA, as well as data for smooth hold/move M1 activity
+    
+    Arguments:
+        args (Namespace): Namespace of command-line arguments
+        
+    Returns:
+        td_binned (DataFrame): PyalData formatted structure of neural/behavioral data
+        td_smooth (DataFrame): PyalData formatted structure of neural/behavioral data
+    '''
+    binned_epoch_dict = {
+        'ambig_hold': util.generate_realtime_epoch_fun(
+            'idx_pretaskHoldTime',
+            rel_start_time=-0.3,
+        ),
+        'hold': util.generate_realtime_epoch_fun(
+            'idx_goCueTime',
+            rel_start_time=-0.3,
+        ),
+        'move': util.generate_realtime_epoch_fun(
+            'idx_goCueTime',
+            rel_start_time=0,
+            rel_end_time=0.3,
+        ),
+    }
+
+    td_binned = (
+        td.copy()
+        .pipe(util.split_trials_by_epoch,binned_epoch_dict)
+        .pipe(data.rebin_data,new_bin_size=0.3)
+        .pipe(pyaldata.add_firing_rates,method='bin')
+    )
+
+    spike_fields = [name for name in td.columns.values if name.endswith("_spikes")]
+    for field in spike_fields:
+        assert td_binned[field].values[0].ndim==1, "Binning didn't work"
+
+    smooth_epoch_dict = {
+        'hold_move': src.util.generate_realtime_epoch_fun(
+            'idx_goCueTime',
+            rel_start_time=-0.8,
+            rel_end_time=0.5,
+        ),
+        'hold_move_ref_cue': src.util.generate_realtime_epoch_fun(
+            'idx_pretaskHoldTime',
+            rel_start_time=-0.3,
+            rel_end_time=1.0,
+        ),
+        'full': lambda trial : slice(0,trial['hand_pos'].shape[0]),
+    }
+    td_smooth = (
+        td.copy()
+        .pipe(pyaldata.add_firing_rates,method='smooth',std=0.05,backend='convolve')
+        .pipe(src.util.split_trials_by_epoch,smooth_epoch_dict)
+        .pipe(src.data.rebin_data,new_bin_size=0.05)
+    )
+
+    td_epochs = pd.concat([td_binned,td_smooth]).reset_index()
+
+    return td_epochs
 
 @pyaldata.copy_td
 def apply_models(td,train_epochs=None,test_epochs=None,label_col='task'):
