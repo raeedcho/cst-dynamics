@@ -12,52 +12,39 @@ def load_clean_data(filepath, verbose=False, keep_unsorted=False):
 
     TODO: set up an initial script to move data into the 'data' folder of the project (maybe with DVC)
     """
-    td = pyaldata.mat2dataframe(filepath, True, "trial_data")
+    td = (
+        pyaldata.mat2dataframe(filepath, True, "trial_data")
+        .assign(
+            date_time=lambda x: pd.to_datetime(x['date_time']),
+            session_date=lambda x: pd.DatetimeIndex(x['date_time']).normalize()
+        )
+        .pipe(remove_aborts, verbose=verbose)
+        .pipe(remove_artifact_trials, verbose=verbose)
+        .pipe(filter_unit_guides, filter_func=lambda guide: guide[:,1] > (0 if keep_unsorted else 1))
+        .pipe(remove_correlated_units)
+    )
 
-    # condition dates and times
-    td["date_time"] = pd.to_datetime(td["date_time"])
-    td["session_date"] = pd.DatetimeIndex(td["date_time"]).normalize()
+    array_names = [name.replace('_spikes', '') for name in td.columns if name.endswith('_spikes')]
+    for array in array_names:
+        td = pyaldata.remove_low_firing_neurons(
+            td, f'{array}_spikes', 0.1, divide_by_bin_size=True, verbose=verbose
+        )
 
-    # remove aborts
+    return td
+
+@pyaldata.copy_td
+def remove_aborts(td,verbose=False):
+    """
+    Remove trials that were aborted
+    """
     abort_idx = np.isnan(td["idx_goCueTime"])
     td = td[~abort_idx]
     if verbose:
         print(f"Removed {sum(abort_idx)} trials that monkey aborted")
-
-    # td = trim_nans(td)
-    # td = fill_kinematic_signals(td)
-
-    # neural data considerations
-    td = remove_bad_trials(td,rate_thresh=350,verbose=verbose)
-    array_names = [name.replace('_spikes', '') for name in td.columns if name.endswith('_spikes')]
-    for array in array_names:
-        unit_guide = td.loc[td.index[0],f'{array}_unit_guide']
-        if unit_guide.shape[0] > 0:
-            # remove unsorted neurons (unit number <=1)
-            if keep_unsorted:
-                bad_units = unit_guide[:, 1] <= 0
-            else:
-                bad_units = unit_guide[:, 1] <= 1
-
-            # for this particular file only, remove correlated neurons...
-            if td.loc[td.index[0], "session_date"] == pd.to_datetime("2018/06/26"):
-                corr_units = np.array([[8, 2], [64, 2]])
-                bad_units = bad_units | (
-                    np.in1d(unit_guide[:, 0], corr_units[:, 0])
-                    & np.in1d(unit_guide[:, 1], corr_units[:, 1])
-                )
-
-            # mask out bad neural data
-            td[f'{array}_spikes'] = [spikes[:, ~bad_units] for spikes in td[f'{array}_spikes']]
-            td[f'{array}_unit_guide'] = [guide[~bad_units, :] for guide in td[f'{array}_unit_guide']]
-
-            td = pyaldata.remove_low_firing_neurons(
-                td, f'{array}_spikes', 0.1, divide_by_bin_size=True, verbose=verbose
-            )
-
+    
     return td
 
-
+@pyaldata.copy_td
 def trim_nans(trial_data, ref_signals=["rel_hand_pos"]):
     """
     Trim nans off of end of trials when hand position wasn't recorded
@@ -109,14 +96,72 @@ def fill_kinematic_signals(td, cutoff=30):
 
     return td
 
+@pyaldata.copy_td
+def filter_unit_guides(td,filter_func):
+    """
+    Removes unsorted units from TD, given array name
+
+    Inputs:
+        - td: PyalData DataFrame
+        - filter_func: function to filter units with (callable that takes unit guide as input and returns boolean array)
+
+    Returns:
+        - td: PyalData DataFrame with filtered units
+    """
+    
+
+    array_names = [name.replace('_spikes', '') for name in td.columns if name.endswith('_spikes')]
+    for array in array_names:
+        unit_guide = td.loc[td.index[0],f'{array}_unit_guide']
+
+        if unit_guide.shape[0] == 0:
+            continue
+
+        # remove unsorted neurons (unit number <=1)
+        good_units = filter_func(unit_guide)
+
+        # mask out bad neural data
+        td =  mask_neural_data(td, array, good_units)
+
+    return td
 
 @pyaldata.copy_td
-def mask_neural_data(td, mask):
+def remove_correlated_units(td):
+    '''
+    Removes correlated units from TD, given array name
+    '''
+
+    # for now, this particular file only...
+    if td.loc[td.index[0], "session_date"] == pd.to_datetime("2018/06/26"):
+        unit_guide = td.loc[td.index[0],'M1_unit_guide']
+        corr_units = np.array([[8, 2], [64, 2]])
+        bad_units = (
+            np.in1d(unit_guide[:, 0], corr_units[:, 0])
+            & np.in1d(unit_guide[:, 1], corr_units[:, 1])
+        )
+        td = mask_neural_data(td, 'M1', ~bad_units)
+
+    return td
+
+
+@pyaldata.copy_td
+def mask_neural_data(td, array, mask):
     """
     Returns a PyalData structure with neural units kept according to mask
     (Basically just masks out both the actual neural data and the unit guide simultaneously)
+
+    Inputs:
+        - td: PyalData structure
+        - array: name of array to mask
+        - mask: boolean array of units to keep
+
+    Outputs:
+        - td: PyalData structure with neural units masked out
     """
-    pass
+    td[f'{array}_spikes'] = [spikes[:, mask] for spikes in td[f'{array}_spikes']]
+    td[f'{array}_unit_guide'] = [guide[mask, :] for guide in td[f'{array}_unit_guide']]
+
+    return td
 
 
 @pyaldata.copy_td
@@ -193,7 +238,7 @@ def add_trial_time(trial_data, ref_event=None):
     return trial_data
 
 @pyaldata.copy_td
-def remove_bad_trials(trial_data, rate_thresh=350,verbose=False):
+def remove_artifact_trials(trial_data, rate_thresh=350,verbose=False):
     '''
     Remove trials with neural artifacts (mostly in Prez when he moves his head).
     These artifacts look like very high firing rates for a hundred milliseconds or so.
