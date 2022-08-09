@@ -58,7 +58,16 @@ def make_trial_raster(trial, ax=None, sig='M1_spikes', events=None, ref_event_id
                     [0,trial[sig].shape[1]],
                     '--r'
                 )
-                ax.text(event_times, trial[sig].shape[1]+2, event.replace('idx_',''), color='r', fontsize=12, rotation='vertical')
+                ax.text(
+                    event_times,
+                    trial[sig].shape[1]+2,
+                    event.replace('idx_',''),
+                    color='b',
+                    fontsize=14,
+                    fontweight='black',
+                    rotation='vertical',
+                    verticalalignment='top',
+                )
             elif event_times.size > 1:
                 for ev_t in event_times:
                     ax.plot(
@@ -66,7 +75,16 @@ def make_trial_raster(trial, ax=None, sig='M1_spikes', events=None, ref_event_id
                         [0,trial[sig].shape[1]],
                         '--r'
                     )
-                    ax.text(ev_t, trial[sig].shape[1]+2, event.replace('idx_',''), color='r', fontsize=12, rotation='vertical')
+                    ax.text(
+                        ev_t,
+                        trial[sig].shape[1]+2,
+                        event.replace('idx_',''),
+                        color='b',
+                        fontsize=14,
+                        fontweight='black',
+                        rotation='vertical',
+                        verticalalignment='top',
+                    )
 
     ax.set_yticks([])
     sns.despine(ax=ax,left=True,bottom=False,trim=True,offset=10)
