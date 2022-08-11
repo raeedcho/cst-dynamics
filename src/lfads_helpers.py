@@ -146,9 +146,6 @@ def add_lfads_rates(
 
 @pyaldata.copy_td
 def prep_data_with_lfads(td, task, lfads_params, analysis_params):
-    td_task = td.groupby('task').get_group(task).copy()
-
-    td_task = pyaldata.combine_time_bins(td_task,int(lfads_params['bin_size']/td_task['bin_size'].values[0]))
 
     trial_ids = load_data(
         '../data/pre-lfads/', 
@@ -157,45 +154,40 @@ def prep_data_with_lfads(td, task, lfads_params, analysis_params):
         merge_tv=True
     )[0].astype(int)
 
-    post_data = load_posterior_averages(f'../results/autolfads/Earl_20190716/autolfads_with_jitter/{task.lower()}', merge_tv=True)
-    td_task = add_lfads_rates(
-        td_task,
-        post_data.rates/lfads_params['bin_size'],
-        chopped_trial_ids=trial_ids,
-        overlap=lfads_params['overlap'],
-        new_sig_name='lfads_rates',
-    )
-    td_task = add_lfads_rates(
-        td_task,
-        post_data.gen_inputs/lfads_params['bin_size'],
-        chopped_trial_ids=trial_ids,
-        overlap=lfads_params['overlap'],
-        new_sig_name='lfads_inputs',
+    post_data = load_posterior_averages(
+        f'../results/autolfads/Earl_20190716/autolfads_with_jitter/{task.lower()}',
+        merge_tv=True
     )
 
-    td_task = data.trim_nans(td_task,ref_signals=['rel_hand_pos','lfads_rates'])
-    td_task = data.fill_kinematic_signals(td_task)
-
-    td_task['M1_rates'] = [
-        pyaldata.smooth_data(
-            spikes/bin_size,
-            dt=bin_size,
-            std=0.05,
-            backend='convolve',
-        ) for spikes,bin_size in zip(td_task['M1_spikes'],td_task['bin_size'])
-    ]
-
-    # Note: this runs soft normalization on each task individually instead of across tasks
-    # TODO: fix this to make soft normalization across tasks (will have to deal with nans somehow)
-    td_task = pyaldata.soft_normalize_signal(td_task,signals=['M1_rates','lfads_rates'])
-
-    M1_pca_model = PCA(n_components=analysis_params['num_dims'])
-    td_task = pyaldata.dim_reduce(td_task,M1_pca_model,'M1_rates','M1_pca')
-    
-    lfads_pca_model = PCA(n_components=analysis_params['num_dims'])
-    td_task = pyaldata.dim_reduce(td_task,lfads_pca_model,'lfads_rates','lfads_pca')
-
-    # rebin at larger bin size
-    td_task = pyaldata.combine_time_bins(td_task, n_bins=int(analysis_params['bin_size']/td_task['bin_size'].values[0]))
+    td_task = (
+        td.groupby('task').get_group(task).copy()
+        .pipe(data.rebin_data,new_bin_size=lfads_params['bin_size'])
+        .pipe(
+            add_lfads_rates,
+            post_data.rates/lfads_params['bin_size'],
+            chopped_trial_ids=trial_ids,
+            overlap=lfads_params['overlap'],
+            new_sig_name='lfads_rates',
+        )
+        .pipe(
+            add_lfads_rates,
+            post_data.gen_inputs/lfads_params['bin_size'],
+            chopped_trial_ids=trial_ids,
+            overlap=lfads_params['overlap'],
+            new_sig_name='lfads_inputs',
+        )
+        # do sequential trimming to maximally avoid edge effects from kinematic signals
+        .pipe(data.trim_nans, ref_signals=['rel_hand_pos'])
+        .pipe(data.fill_kinematic_signals)
+        .pipe(data.trim_nans, ref_signals=['lfads_rates'])
+        .pipe(pyaldata.add_firing_rates,method='smooth', std=0.05, backend='convolve')
+        # Note: this runs soft normalization on each task individually instead of across tasks
+        # TODO: fix this to make soft normalization across tasks (will have to deal with nans somehow)
+        .pipe(pyaldata.soft_normalize_signal,signals=['M1_rates','lfads_rates'])
+        .pipe(pyaldata.dim_reduce,PCA(n_components=analysis_params['num_dims']),'M1_rates','M1_pca')
+        .pipe(pyaldata.dim_reduce,PCA(n_components=analysis_params['num_dims']),'lfads_rates','lfads_pca')
+        # rebin at larger bin size
+        .pipe(data.rebin_data,new_bin_size=analysis_params['bin_size'])
+    )
 
     return td_task
