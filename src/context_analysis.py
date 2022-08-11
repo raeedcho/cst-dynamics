@@ -7,6 +7,7 @@ from . import subspace_tools,data,util
 
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
 from sklearn.decomposition import PCA
+from sklearn.pipeline import Pipeline
 
 def extract_td_epochs(td):
     '''
@@ -104,48 +105,19 @@ def apply_models(td,train_epochs=None,test_epochs=None,label_col='task'):
         ])
     )
 
-    rate_fields = [name for name in td_train.columns if name.endswith('_rates')]
-    for field in rate_fields:
-        pca_model = PCA(n_components=15)
-        td_train[field.replace('rates','pca')] = list(pca_model.fit_transform(np.row_stack(td_train[field])))
-        # td_train[field.replace('rates','pca')] = [pca_model.transform(rates) for rates in td_train[field]]
-        td_test[field.replace('rates','pca')] = [pca_model.transform(rates) for rates in td_test[field]]
-
-        M1_lda_model = LinearDiscriminantAnalysis()
-        td_train[field.replace('rates','lda')] = M1_lda_model.fit_transform(
-            np.row_stack(td_train[field.replace('rates','pca')].values),
+    arrays = [name.replace('_rates','') for name in td_train.columns if name.endswith('_rates')]
+    for array in arrays:
+        lda_pipe = Pipeline([
+            ('pca',PCA(n_components=15)),
+            ('lda',LinearDiscriminantAnalysis()),
+        ])
+        td_train[f'{array}_lda'] = lda_pipe.fit_transform(
+            np.row_stack(td_train[f'{array}_rates'].values),
             td_train[label_col]
         )
-        td_train[field.replace('rates','pred')] = M1_lda_model.predict(np.row_stack(td_train[field.replace('rates','pca')]))
-        td_test[field.replace('rates','lda')] = [M1_lda_model.transform(sig) for sig in td_test[field.replace('rates','pca')]]
-
-        # check separability in neuron-behavioral potent space
-        potent_space,null_space = subspace_tools.find_potent_null_space(
-            np.row_stack(td_train[field.replace('rates','pca')]),
-            np.column_stack([
-                np.row_stack(td_train['rel_hand_pos'].values),
-                np.row_stack(td_train['hand_vel'].values),
-            ]),
-        )
-        td_train[field.replace('rates','potent_space')] = [neural_state @ potent_space for neural_state in td_train[field.replace('rates','pca')]]
-        td_test[field.replace('rates','potent_space')] = [neural_state @ potent_space for neural_state in td_test[field.replace('rates','pca')]]
-        M1_potent_lda_model = LinearDiscriminantAnalysis()
-        td_train[field.replace('rates','potent_lda')] = M1_potent_lda_model.fit_transform(
-            np.row_stack(td_train[field.replace('rates','potent_space')].values),
-            td_train[label_col]
-        )
-        td_train[field.replace('rates','potent_pred')] = M1_potent_lda_model.predict(np.row_stack(td_train[field.replace('rates','potent_space')]))
-        td_test[field.replace('rates','potent_lda')] = [M1_potent_lda_model.transform(sig) for sig in td_test[field.replace('rates','potent_space')]]
-
-        td_train[field.replace('rates','null_space')] = [neural_state @ null_space for neural_state in td_train[field.replace('rates','pca')]]
-        td_test[field.replace('rates','null_space')] = [neural_state @ null_space for neural_state in td_test[field.replace('rates','pca')]]
-        M1_null_lda_model = LinearDiscriminantAnalysis()
-        td_train[field.replace('rates','null_lda')] = M1_null_lda_model.fit_transform(
-            np.row_stack(td_train[field.replace('rates','null_space')].values),
-            td_train[label_col]
-        )
-        td_train[field.replace('rates','null_pred')] = M1_null_lda_model.predict(np.row_stack(td_train[field.replace('rates','null_space')]))
-        td_test[field.replace('rates','null_lda')] = [M1_null_lda_model.transform(sig) for sig in td_test[field.replace('rates','null_space')]]
+        td_train[f'{array}_pred'] = lda_pipe.predict(np.row_stack(td_train[f'{array}_rates']))
+        td_test[f'{array}_lda'] = [lda_pipe.transform(sig) for sig in td_test[f'{array}_rates']]
+        td_test[f'{array}_pred'] = [lda_pipe.predict(sig) for sig in td_test[f'{array}_rates']]
 
     return td_train,td_test
 
