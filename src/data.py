@@ -22,13 +22,8 @@ def load_clean_data(filepath, verbose=False, keep_unsorted=False):
         .pipe(remove_artifact_trials, verbose=verbose)
         .pipe(filter_unit_guides, filter_func=lambda guide: guide[:,1] > (0 if keep_unsorted else 1))
         .pipe(remove_correlated_units)
+        .pipe(remove_all_low_firing_neurons, threshold=0.1, divide_by_bin_size=True, verbose=verbose)
     )
-
-    array_names = [name.replace('_spikes', '') for name in td.columns if name.endswith('_spikes')]
-    for array in array_names:
-        td = pyaldata.remove_low_firing_neurons(
-            td, f'{array}_spikes', 0.1, divide_by_bin_size=True, verbose=verbose
-        )
 
     return td
 
@@ -43,6 +38,25 @@ def remove_aborts(td,verbose=False):
         print(f"Removed {sum(abort_idx)} trials that monkey aborted")
     
     return td
+
+def remove_all_low_firing_neurons(trial_data, signals=None, **kwargs):
+    '''
+    Removes all low firing neurons from the trial data.
+    Wrapper on pyaldata.remove_low_firing_neurons.
+
+    Arguments:
+        trial_data: trial data to be filtered
+        signals: list of signals to be filtered (if None, any signal ending in '_spikes' will be filtered)
+        **kwargs: keyword arguments to be passed to pyaldata.remove_low_firing_neurons
+            (except the signal name, which is hard-coded to any column with 'spikes' in the name)
+    '''
+    if signals is None:
+        signals = [s for s in trial_data.columns if s.endswith('_spikes')]
+
+    for sig in signals:
+        trial_data = pyaldata.remove_low_firing_neurons(trial_data, sig, **kwargs)
+
+    return trial_data
 
 @pyaldata.copy_td
 def trim_nans(trial_data, ref_signals=["rel_hand_pos"]):
