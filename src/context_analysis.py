@@ -47,12 +47,12 @@ def extract_td_epochs(td):
         assert td_binned[field].values[0].ndim==1, "Binning didn't work"
 
     smooth_epoch_dict = {
-        'hold_move': src.util.generate_realtime_epoch_fun(
+        'hold_move': util.generate_realtime_epoch_fun(
             'idx_goCueTime',
             rel_start_time=-0.8,
             rel_end_time=0.5,
         ),
-        'hold_move_ref_cue': src.util.generate_realtime_epoch_fun(
+        'hold_move_ref_cue': util.generate_realtime_epoch_fun(
             'idx_pretaskHoldTime',
             rel_start_time=-0.3,
             rel_end_time=1.0,
@@ -62,8 +62,8 @@ def extract_td_epochs(td):
     td_smooth = (
         td.copy()
         .pipe(pyaldata.add_firing_rates,method='smooth',std=0.05,backend='convolve')
-        .pipe(src.util.split_trials_by_epoch,smooth_epoch_dict)
-        .pipe(src.data.rebin_data,new_bin_size=0.05)
+        .pipe(util.split_trials_by_epoch,smooth_epoch_dict)
+        .pipe(data.rebin_data,new_bin_size=0.05)
     )
 
     td_epochs = pd.concat([td_binned,td_smooth]).reset_index()
