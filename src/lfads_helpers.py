@@ -145,7 +145,7 @@ def add_lfads_rates(
     return trial_data
 
 @pyaldata.copy_td
-def prep_data_with_lfads(td, task, lfads_params, analysis_params):
+def prep_data_with_lfads(td, task, lfads_params):
 
     trial_ids = load_data(
         '../data/pre-lfads/', 
@@ -161,6 +161,7 @@ def prep_data_with_lfads(td, task, lfads_params, analysis_params):
 
     td_task = (
         td.groupby('task').get_group(task).copy()
+        # bin to the same size as the lfads data
         .pipe(data.rebin_data,new_bin_size=lfads_params['bin_size'])
         .pipe(
             add_lfads_rates,
@@ -180,14 +181,6 @@ def prep_data_with_lfads(td, task, lfads_params, analysis_params):
         .pipe(data.trim_nans, ref_signals=['rel_hand_pos'])
         .pipe(data.fill_kinematic_signals)
         .pipe(data.trim_nans, ref_signals=['lfads_rates'])
-        .pipe(pyaldata.add_firing_rates,method='smooth', std=0.05, backend='convolve')
-        # Note: this runs soft normalization on each task individually instead of across tasks
-        # TODO: fix this to make soft normalization across tasks (will have to deal with nans somehow)
-        .pipe(pyaldata.soft_normalize_signal,signals=['M1_rates','lfads_rates'])
-        .pipe(pyaldata.dim_reduce,PCA(n_components=analysis_params['num_dims']),'M1_rates','M1_pca')
-        .pipe(pyaldata.dim_reduce,PCA(n_components=analysis_params['num_dims']),'lfads_rates','lfads_pca')
-        # rebin at larger bin size
-        .pipe(data.rebin_data,new_bin_size=analysis_params['bin_size'])
     )
 
     return td_task

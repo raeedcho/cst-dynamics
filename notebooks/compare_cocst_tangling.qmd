@@ -1,4 +1,14 @@
 ---
+title: Neural dynamics of CST and CO
+subtitle: Investigation of neural tangling and LFADS inputs in CST and CO
+format:
+  html:
+    toc: true
+    toc-location: left
+    cap-location: margin
+    code-fold: true
+    execute: true
+    self-contained: true
 jupyter: python3
 ---
 
@@ -16,9 +26,14 @@ import pyaldata
 import yaml
 import numpy as np
 import pandas as pd
-import seaborn as sns
 
-sns.set_context('talk')
+from sklearn.decomposition import PCA
+
+import seaborn as sns
+import k3d
+import matplotlib.pyplot as plt
+
+sns.set_context('paper')
 
 %load_ext autoreload
 %autoreload 2
@@ -28,7 +43,33 @@ sns.set_context('talk')
 with open('../params.yaml', 'r') as params_file:
     full_params = yaml.safe_load(params_file)
     lfads_params = full_params['lfads_prep']
-    analysis_params = full_params['analysis']
+    analysis_params = full_params['dynamics_analysis']
+
+trial_data = (
+    pyaldata.mat2dataframe('../data/trial_data/Earl_20190716_COCST_TD.mat', True, "trial_data")
+    .assign(
+        date_time=lambda x: pd.to_datetime(x['date_time']),
+        session_date=lambda x: pd.DatetimeIndex(x['date_time']).normalize()
+    )
+    .pipe(src.data.remove_aborts, verbose=analysis_params['verbose'])
+    .pipe(src.data.remove_artifact_trials, verbose=analysis_params['verbose'])
+    .pipe(src.data.filter_unit_guides, filter_func=lambda guide: guide[:,1] > (0 if analysis_params['keep_unsorted'] else 1))
+    .pipe(src.data.remove_correlated_units)
+    .pipe(src.data.remove_all_low_firing_neurons, threshold=0.1, divide_by_bin_size=True, verbose=analysis_params['verbose'])
+)
+
+def task_spec_preproc_pipeline(td_task):
+    return (
+        td_task
+        .pipe(pyaldata.add_firing_rates,method='smooth', std=0.05, backend='convolve')
+        # Note: this runs soft normalization on each task individually instead of across tasks
+        # TODO: fix this to make soft normalization across tasks (will have to deal with nans somehow)
+        .pipe(pyaldata.soft_normalize_signal,signals=['M1_rates','lfads_rates'])
+        .pipe(pyaldata.dim_reduce,PCA(n_components=analysis_params['num_dims']),'M1_rates','M1_pca')
+        .pipe(pyaldata.dim_reduce,PCA(n_components=analysis_params['num_dims']),'lfads_rates','lfads_pca')
+        .pipe(pyaldata.add_gradient,'lfads_pca',normalize=True)
+        .pipe(pyaldata.add_gradient,'M1_pca',normalize=True)
+    )
 
 co_epoch_fun = src.util.generate_realtime_epoch_fun(
     'idx_goCueTime',
@@ -41,24 +82,102 @@ cst_epoch_fun = src.util.generate_realtime_epoch_fun(
     rel_end_time=5.0,
 )
 
-trial_data = src.data.load_clean_data('../data/trial_data/Earl_20190716_COCST_TD.mat')
-
 td_co = (
     trial_data
-    .pipe(src.lfads_helpers.prep_data_with_lfads, 'CO', lfads_params, analysis_params)
-    .pipe(pyaldata.add_gradient,'lfads_pca',normalize=True)
-    .pipe(pyaldata.add_gradient,'M1_pca',normalize=True)
+    .pipe(src.lfads_helpers.prep_data_with_lfads, 'CO', lfads_params)
+    .pipe(task_spec_preproc_pipeline)
     .pipe(pyaldata.restrict_to_interval,epoch_fun=co_epoch_fun)
+    .pipe(src.data.rebin_data,new_bin_size=analysis_params['bin_size'])
 )
 
 td_cst = (
     trial_data
-    .pipe(src.lfads_helpers.prep_data_with_lfads,'CST', lfads_params, analysis_params)
-    .pipe(pyaldata.add_gradient,'lfads_pca',normalize=True)
-    .pipe(pyaldata.add_gradient,'M1_pca',normalize=True)
+    .pipe(src.lfads_helpers.prep_data_with_lfads,'CST', lfads_params)
+    .pipe(task_spec_preproc_pipeline)
     .pipe(pyaldata.restrict_to_interval,epoch_fun=cst_epoch_fun)
+    .pipe(src.data.rebin_data,new_bin_size=analysis_params['bin_size'])
 )
 ```
+
+# Neural trajectories (or "What can LFADS do for us?")
+
+First thing to do is to take a look at the neural trajectories in CST and CO trials, with and without LFADS. This will let us see whether LFADS appears to reveal any structure in the data that isn't there when we just look at smoothed neural activity.
+
+Let's start with CO, comparing Gaussian-smoothed and LFADS-smoothed neural trajectories for 25 random trials for each target direction.
+
+```{python}
+#| label: co_neural_trajectories
+#| fig-cap: 
+#|   - "Gaussian-smoothed neural trajectories of 25 random trials per target direction (indicated by color)"
+#|   - "LFADS-smoothed neural trajectories of 25 random trials per target direction (indicated by color)"
+ 
+target_dirs = td_co['tgtDir'].unique()
+dir_colors = plt.get_cmap('Dark2',8)
+co_smoothed_trace_plot = k3d.plot(name='CO Gaussian-smoothed neural traces')
+co_lfads_trace_plot = k3d.plot(name='CO LFADS-smoothed neural traces')
+for dirnum,target_dir in enumerate(target_dirs):
+    # plot traces
+    color_val = int(255*dir_colors(dirnum)[0]) << 16 | int(255*dir_colors(dirnum)[1]) << 8 | int(255*dir_colors(dirnum)[2])
+    td_co_dir = td_co.loc[np.isclose(td_co['tgtDir'],target_dir)]
+
+    for _,trial in td_co_dir.sample(n=25).iterrows():
+        co_smoothed_trace_plot+=k3d.line(trial['M1_pca'][:,0:3].astype(np.float32),shader='mesh',width=1e-3,color=color_val)
+        co_lfads_trace_plot+=k3d.line(trial['lfads_pca'][:,0:3].astype(np.float32),shader='mesh',width=1e-3,color=color_val)
+
+    co_smoothed_trace_plot+=k3d.line(
+        td_co_dir['M1_pca'].mean()[:,0:3].astype(np.float32),
+        shader='mesh',
+        width=5e-3,
+        color=color_val
+    )
+    co_lfads_trace_plot+=k3d.line(
+        td_co_dir['lfads_pca'].mean()[:,0:3].astype(np.float32),
+        shader='mesh',
+        width=5e-3,
+        color=color_val
+    )
+
+co_smoothed_trace_plot.display()
+co_lfads_trace_plot.display()
+```
+
+LFADS neural trajectories are so much cleaner! Though there is still some trial-to-trial variability, we can actually see separation of the neural trajectories at a single trial level with the LFADS-smoothed trajectories, which we couldn't really see with the Gaussian-smoothed trajectories.
+
+We can do the same comparison for CST as well. Though we don't have any target directions for CST, we'll color the neural traces based on horizontal hand velocity.
+
+```{python}
+#| label: cst_neural_trajectories
+#| fig-cap: 
+#|   - "Gaussian-smoothed neural trajectories of 10 random CST trials, colored by horizontal hand velocity"
+#|   - "LFADS-smoothed neural trajectories of the same 10 random CST trials, colored by horizontal hand velocity"
+ 
+cst_gauss_trace_plot = k3d.plot(name='CST smoothed neural traces')
+cst_lfads_trace_plot = k3d.plot(name='CST LFADS neural traces')
+max_abs_hand_vel = np.percentile(np.abs(np.row_stack(td_cst['hand_vel'])[:,0]),95)
+# plot traces
+for _,trial in td_cst.sample(n=10).iterrows():
+    cst_gauss_trace_plot+=k3d.line(
+        trial['M1_pca'][:,0:3].astype(np.float32),
+        shader='mesh',
+        width=3e-3,
+        attribute=trial['hand_vel'][:,0],
+        color_map=k3d.paraview_color_maps.Erdc_divHi_purpleGreen,
+        color_range=[-max_abs_hand_vel,max_abs_hand_vel],
+    )
+    cst_lfads_trace_plot+=k3d.line(
+        trial['lfads_pca'][:,0:3].astype(np.float32),
+        shader='mesh',
+        width=3e-3,
+        attribute=trial['hand_vel'][:,0],
+        color_map=k3d.paraview_color_maps.Erdc_divHi_purpleGreen,
+        color_range=[-max_abs_hand_vel,max_abs_hand_vel],
+    )
+
+cst_gauss_trace_plot.display()
+cst_lfads_trace_plot.display()
+```
+
+Here, both LFADS and Gaussian-smoothed neural trajectories look a bit messy, but there does appear to be a little bit more structure to the LFADS-smoothed trajectories, which are sort of arranged in a butterfly-like shape, with each lobe corresponding to either left or right hand movement.
 
 ```{python}
 td_co = src.data.add_trial_time(td_co,ref_event='idx_goCueTime')
