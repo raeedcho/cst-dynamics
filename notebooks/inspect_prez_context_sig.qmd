@@ -43,10 +43,6 @@ import yaml
 from sklearn.decomposition import PCA
 from ipywidgets import interact
 
-with open('../params.yaml','r') as f:
-    params = yaml.safe_load(f)
-    inspection_params = params['inspection']
-
 sns.set_context('paper')
 
 %load_ext autoreload
@@ -58,6 +54,10 @@ sns.set_context('paper')
 To start, let's import a dataset (2022/07/20) and preprocess it. This takes a number of preprocessing steps, and they should be somewhat self-evident (if slightly difficult to read) in the code pipeline below.
 
 ```{python}
+with open('../params.yaml','r') as f:
+    params = yaml.safe_load(f)
+    inspection_params = params['inspection']
+
 td = (
     pyaldata.mat2dataframe(
         '../data/trial_data/Prez_20220720_RTTCSTCO_TD.mat',
