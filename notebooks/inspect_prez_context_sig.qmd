@@ -5,8 +5,10 @@ format:
   html:
     toc: true
     toc-location: left
+    cap-location: margin
     code-fold: true
     execute: true
+    self-contained: true
 jupyter: python3
 ---
 
@@ -45,7 +47,7 @@ with open('../params.yaml','r') as f:
     params = yaml.safe_load(f)
     inspection_params = params['inspection']
 
-sns.set_context('talk')
+sns.set_context('paper')
 
 %load_ext autoreload
 %autoreload 2
@@ -53,12 +55,15 @@ sns.set_context('talk')
 
 # Data inspection
 
-To start, let's import a dataset (2022/07/20) and preprocess it. This takes a number of preprocessing steps, and they should be fairly self-evident in the pipeline below.
+To start, let's import a dataset (2022/07/20) and preprocess it. This takes a number of preprocessing steps, and they should be somewhat self-evident (if slightly difficult to read) in the code pipeline below.
 
 ```{python}
-#| code-fold: false
 td = (
-    pyaldata.mat2dataframe('../data/trial_data/Prez_20220720_RTTCSTCO_TD.mat', shift_idx_fields=True, td_name='trial_data')
+    pyaldata.mat2dataframe(
+        '../data/trial_data/Prez_20220720_RTTCSTCO_TD.mat',
+        shift_idx_fields=True,
+        td_name='trial_data'
+    )
     .assign(
         date_time=lambda x: pd.to_datetime(x['date_time']),
         session_date=lambda x: pd.DatetimeIndex(x['date_time']).normalize()
@@ -66,11 +71,32 @@ td = (
     .query('task=="RTT" | task=="CST"')
     .pipe(src.data.remove_aborts, verbose=inspection_params['verbose'])
     .pipe(src.data.remove_artifact_trials, verbose=inspection_params['verbose'])
-    .pipe(src.data.filter_unit_guides, filter_func=lambda guide: guide[:,1] > (0 if inspection_params['keep_unsorted'] else 1))
+    .pipe(
+        src.data.filter_unit_guides,
+        filter_func=lambda guide: guide[:,1] > (0 if inspection_params['keep_unsorted'] else 1)
+    )
     .pipe(src.data.remove_correlated_units)
-    .pipe(pyaldata.remove_low_firing_neurons, 'M1_spikes', threshold=0.1, divide_by_bin_size=True, verbose=inspection_params['verbose'])
-    .pipe(pyaldata.remove_low_firing_neurons, 'PMd_spikes', threshold=0.1, divide_by_bin_size=True, verbose=inspection_params['verbose'])
-    .pipe(pyaldata.remove_low_firing_neurons, 'MC_spikes', threshold=0.1, divide_by_bin_size=True, verbose=inspection_params['verbose'])
+    .pipe(
+        pyaldata.remove_low_firing_neurons,
+        'M1_spikes',
+        threshold=0.1,
+        divide_by_bin_size=True,
+        verbose=inspection_params['verbose']
+    )
+    .pipe(
+        pyaldata.remove_low_firing_neurons,
+        'PMd_spikes',
+        threshold=0.1,
+        divide_by_bin_size=True,
+        verbose=inspection_params['verbose']
+    )
+    .pipe(
+        pyaldata.remove_low_firing_neurons,
+        'MC_spikes',
+        threshold=0.1,
+        divide_by_bin_size=True,
+        verbose=inspection_params['verbose']
+    )
     .pipe(pyaldata.add_firing_rates,method='smooth', std=0.05, backend='convolve')
     .pipe(src.data.trim_nans, ref_signals=['rel_hand_pos'])
     .pipe(src.data.fill_kinematic_signals)
@@ -95,7 +121,7 @@ td = (
 As a sanity check, let's check out the rasters from a couple random CST trials and RTT trials:
 
 ```{python}
-_,axs = plt.subplots(4,1,figsize=(10,15),sharex=True)
+_,axs = plt.subplots(4,1,figsize=(6,10),sharex=True)
 for ax,trial_id in zip(axs.flatten(),td.groupby('task').sample(n=2)['trial_id']):
     trial = td.loc[td['trial_id']==trial_id,:].squeeze()
     src.plot.make_trial_raster(
@@ -125,13 +151,19 @@ g = sns.pairplot(
     hue='task',
     diag_kind='hist',
     corner=True,
-    height=3,
+    height=1.5,
 )
 ```
+
+The ambiguous and cued hold periods are about the same length for each trial type, and the movement period is slightly shorter for RTT trials than for CST trials, but the trial length disparity is much reduced from that of CO-CST datasets. Perhaps with future data collection, we can increase the number of random targets to more closely match the timing, or we can just have the monkey reaching for random targets until a timer runs out.
 
 ## Neural state space in RTT and CST
 
 Now, let's take a look at the individual, smoothed neural traces for each trial type. First CST:
+
+:::{.callout-tip}
+These figures below are interactive, so feel free to rotate, zoom and pan to look around.
+:::
 
 ```{python}
 cst_trace_plot = k3d.plot(name='CST smoothed neural traces')
@@ -174,17 +206,132 @@ It's tough to really see a whole lot here, but there are two observations:
 
 # Looking for the contextual preparatory activity
 
+In previous data, we saw that there was a separation in neural data between CO and CST trials, even before the trial started, and before there was much difference in the behavioral data. Here, we'll look for that same separation between CST and RTT trials, as well as how it evolves through the trial, from ambiguous hold to cued hold to movement. For each of the following analyses, we'll follow the same procedure, but training on different epochs of the data:
 
+1. Extract a 300 ms window of neural data during the epoch of interest (ambiguous hold, cued hold, or movement).
+2. Compute the average firing rates of all neurons in this 300 ms bin.
+3. Run PCA on the average firing rates across all neurons in this bin.
+4. Run LDA on the top 15 principal components of the neural data to find the separability of neural data in this epoch (i.e. ambiguous hold, cued hold, or movement).
+
+We'll also run a similar analysis on the behavior during each of these periods as a control to see if there is any difference in the behavior during the epoch of interest. This follows the same procedure as above, except that instead of PCA, we'll just use the average 3D hand position and velocity during the epoch of interest.
+
+Lastly, we'll also examine the dynamics of this neural separability through the trial. To do this, we'll simply take the smoothed neural data in the trial and run it through the PCA-LDA pipeline that was fit on the epoch of interest. Then, by projecting this smoothed neural data into the found LDA axis, we should see how neural activity evolves over time along this putative context-dependent neural dimension.
+
+:::{.callout-note}
+Because the trials have randomized lengths, we'll have to reference these neural dynamics by different time points to get a full picture of the dynamics. In this case, we'll try referencing both to the go cue and to the start of the pre-task cued hold period.
+:::
 
 ```{python}
+# this function extracts epochs from the dataframe and and returns a dataframe with the epochs
+# labeled for fitting models and predicting trial type
+# Note:The epoch extraction in the code below requires a bit of a kludge to rename the variables,
+# but it's a simple way to get the data into the right format for the analysis with the current state of the code.
+td_epoch = src.context_analysis.extract_td_epochs(
+    td.rename(columns={'M1_rates':'M1_orig_rates','MC_rates':'M1_rates'})
+)
 ```
 
-```{python}
-td_epoch = extract_td_epochs(td.rename(columns={'M1_rates':'M1_orig_rates','MC_rates':'M1_rates'}))
-```
+## Context in the ambiguous hold period
+
+First, let's take a look at separability in the neural data between CST and RTT trials in the ambiguous hold period. If the task worked out the way we hope it did, there should be little to no separation because the monkey has no idea which trial is coming up. This should serve as a good control for later analyses of this context axis.
 
 ```{python}
-td_train,td_test = src.context_analysis.apply_models(td_epoch,train_epochs=['ambig_hold'],test_epochs=['hold_move','hold_move_ref_cue','full'])
+#| label: ambiguous_hold_separability
+#| fig-cap: "^Context in the ambiguous hold period"
+#| fig-subcap: 
+#|   - "Ambiguous Hold Period Neural PC space"
+#|   - "Ambiguous Hold Period LDA projection through session"
+#|   - "Ambiguous Hold Period Behavior"
+#|   - "Ambiguous Hold Period LDA projection through session"
+#|   - "Ambiguous Hold Period LDA dynamics (go cue ref)"
+#|   - "Ambiguous Hold Period LDA dynamics (trial-type cue ref)"
+#|   - "Ambiguous Hold Period LDA dynamics (full trial)"
+
+td_train,td_test = src.context_analysis.apply_models(
+    td_epoch,
+    train_epochs=['ambig_hold'],
+    test_epochs=['hold_move','hold_move_ref_cue','full'],
+)
+
+fig_gen_dict = {
+    'task_M1_pca':src.context_analysis.plot_hold_pca(td_train,array_name='M1',hue_order=['RTT','CST']),
+    'task_M1_lda':src.context_analysis.plot_M1_lda(td_train,hue_order=['RTT','CST']),
+    'task_beh':src.context_analysis.plot_hold_behavior(td_train,hue_order=['RTT','CST']),
+    'task_beh_lda':src.context_analysis.plot_beh_lda(td_train,hue_order=['RTT','CST']),
+    # LDA traces
+    'task_lda_trace':src.context_analysis.plot_M1_lda_traces(td_test.query('epoch=="hold_move"'),ref_event='idx_goCueTime',label_colors={'RTT':'r','CST':'b'}),
+    'task_lda_trace_pretask':src.context_analysis.plot_M1_lda_traces(td_test.query('epoch=="hold_move_ref_cue"'),ref_event='idx_pretaskHoldTime',label_colors={'RTT':'r','CST':'b'}),
+    'task_lda_trace':src.context_analysis.plot_M1_lda_traces(td_test.query('epoch=="full"'),ref_event='idx_goCueTime',label_colors={'RTT':'r','CST':'b'}),
+}
+```
+
+Overall, this shows a few things:
+
+1. The behavior during the ambiguous hold period is pretty similar across the two tasks.
+2. The neural data in this period isn't very separable (discriminability 0.61, compared to behavior's 0.59). Note that this is not cross-validated, so we can't expect discriminability to be at or below chance level (0.5) even for fully random data.
+3. Projecting neural dynamics into the LDA space defined by the ambiguous hold period doesn't reveal separation between the two tasks randomly (so it's unlikely to randomly find a separation--though there's probably a better control for this).
+
+## Context in the cued hold period
+
+Now we can take a look at contextual separation in the cued hold period, where the monkey finds out which trial is coming up. If there's pre-trial contextual preparatory neural activity, this is where it would show up.
+
+```{python}
+#| label: pre_task_hold_separability
+#| fig-cap: "^Context in the cued hold period"
+#| fig-subcap: 
+#|   - "Pre-task Hold Period Neural PC space"
+#|   - "Pre-task Hold Period LDA projection through session"
+#|   - "Pre-task Hold Period Behavior"
+#|   - "Pre-task Hold Period LDA projection through session"
+#|   - "Pre-task Hold Period LDA dynamics (go cue ref)"
+#|   - "Pre-task Hold Period LDA dynamics (trial-type cue ref)"
+#|   - "Pre-task Hold Period LDA dynamics (full trial)"
+ 
+td_train,td_test = src.context_analysis.apply_models(
+    td_epoch,
+    train_epochs=['hold'],
+    test_epochs=['hold_move','hold_move_ref_cue','full'],
+)
+
+fig_gen_dict = {
+    'task_M1_pca':src.context_analysis.plot_hold_pca(td_train,array_name='M1',hue_order=['RTT','CST']),
+    'task_M1_lda':src.context_analysis.plot_M1_lda(td_train,hue_order=['RTT','CST']),
+    'task_beh':src.context_analysis.plot_hold_behavior(td_train,hue_order=['RTT','CST']),
+    'task_beh_lda':src.context_analysis.plot_beh_lda(td_train,hue_order=['RTT','CST']),
+    # LDA traces
+    'task_lda_trace':src.context_analysis.plot_M1_lda_traces(td_test.query('epoch=="hold_move"'),ref_event='idx_goCueTime',label_colors={'RTT':'r','CST':'b'}),
+    'task_lda_trace_pretask':src.context_analysis.plot_M1_lda_traces(td_test.query('epoch=="hold_move_ref_cue"'),ref_event='idx_pretaskHoldTime',label_colors={'RTT':'r','CST':'b'}),
+    'task_lda_trace':src.context_analysis.plot_M1_lda_traces(td_test.query('epoch=="full"'),ref_event='idx_goCueTime',label_colors={'RTT':'r','CST':'b'}),
+}
+```
+
+Again, there are a few things to note from these figures:
+
+1. The behavior during the pre-task hold period is again pretty similar across the two tasks, with fairly low discriminability (0.65, not cross-validated, with a chance level of 0.5).
+2. The neural data in this period is quite separable (discriminability 0.8, compared to behavior's 0.65). This suggests that the neural activity separates once the monkey learns which type of trial is coming up, even though the holding behavior remains pretty similar.
+3. Projecting neural dynamics into the LDA space defined by the pre-task hold period shows that the separation along this context-dependent neural dimension begins about 300ms after the cued hold period starts and ends about 300ms after the go cue, at which point the neural dynamics along this axis mostly collapse to overlap with each other for the rest of the trial (though there is a slight separation).
+
+## Context in the post-go-cue period
+
+Lastly, for completeness, we run these same analyses on the 300 ms just after the go cue, which should capture the initial bout of movement as the monkey starts to either reach to the first random target (RTT) or control the unstable cursor (CST)
+
+```{python}
+#| label: move_separability
+#| fig-cap: "^Context in the post-go-cue period"
+#| fig-subcap: 
+#|   - "Movement Period Neural PC space"
+#|   - "Movement Period LDA projection through session"
+#|   - "Movement Period Behavior"
+#|   - "Movement Period LDA projection through session"
+#|   - "Movement Period LDA dynamics (go cue ref)"
+#|   - "Movement Period LDA dynamics (trial-type cue ref)"
+#|   - "Movement Period LDA dynamics (full trial)"
+ 
+td_train,td_test = src.context_analysis.apply_models(
+    td_epoch,
+    train_epochs=['move'],
+    test_epochs=['hold_move','hold_move_ref_cue','full'],
+)
 
 fig_gen_dict = {
     'task_M1_pca':src.context_analysis.plot_hold_pca(td_train,array_name='M1',hue_order=['RTT','CST']),
@@ -201,39 +348,110 @@ fig_gen_dict = {
 }
 ```
 
-```{python}
-td_train,td_test = src.context_analysis.apply_models(td_epoch,train_epochs=['hold'],test_epochs=['hold_move','hold_move_ref_cue','full'])
+Overall, these plots look fairly similar to the previous (pre-task hold period) figures. The behavior in this epoch still seems similarly distributed between the two tasks, which suggests that the monkey hasn't quite started moving in earnest yet. Also, the neural activity is still pretty separable in this epoch (0.79, compared to behavior's 0.59). However, one striking difference between these figures and the previous set is in the dynamics. Neural activity still separates around 300 ms after the pre-task cued hold period begins, but this separation appears to continue far beyond the go cue into the rest of the trial.
 
-fig_gen_dict = {
-    'task_M1_pca':src.context_analysis.plot_hold_pca(td_train,array_name='M1',hue_order=['RTT','CST']),
-    'task_M1_lda':src.context_analysis.plot_M1_lda(td_train,hue_order=['RTT','CST']),
-    'task_beh':src.context_analysis.plot_hold_behavior(td_train,hue_order=['RTT','CST']),
-    'task_beh_lda':src.context_analysis.plot_beh_lda(td_train,hue_order=['RTT','CST']),
-    # 'task_M1_potent': src.plot_M1_hold_potent(td_train,hue_order=['RTT','CST']),
-    # 'task_M1_potent_lda': src.plot_M1_potent_lda(td_train,hue_order=['RTT','CST']),
-    # 'task_M1_null_lda': src.plot_M1_null_lda(td_train,hue_order=['RTT','CST']),
-    # LDA traces
-    'task_lda_trace':src.context_analysis.plot_M1_lda_traces(td_test.query('epoch=="hold_move"'),ref_event='idx_goCueTime',label_colors={'RTT':'r','CST':'b'}),
-    'task_lda_trace_pretask':src.context_analysis.plot_M1_lda_traces(td_test.query('epoch=="hold_move_ref_cue"'),ref_event='idx_pretaskHoldTime',label_colors={'RTT':'r','CST':'b'}),
-    'task_lda_trace':src.context_analysis.plot_M1_lda_traces(td_test.query('epoch=="full"'),ref_event='idx_goCueTime',label_colors={'RTT':'r','CST':'b'}),
-}
-```
+This suggests that there is more than one dimension of neural activity that separate the tasks, with at least one dimension that retains the separation through the entire trial and one (possibly overlapping dimension) in which the separability collapses once the monkey starts to move. This collapsing dimension is reminiscent of a preparatory dimension, while the full-trial separability dimension suggests that behavior occurs in separate regions of the neural state space.
+
+## A more careful look at the dynamics of neural separability
+
+The previous results showed that neural activity may be separable by task throughout the trial, perhaps separating along different dimensions at different times. However, it was a little bit difficult to see the separability in the neural dynamics with all of those traces plotted together. We might be able to get a better picture by looking at how separable the neural activity is along a given dimension in 50 ms bins through the entire trial, referenced to different events in the trial (namely, go cue and pre-task hold cue).
+
+First, we'll define a function to process and plot the smoothed neural data to get separability aligned to different time indices (see code block for pipeline).
 
 ```{python}
-td_train,td_test = src.context_analysis.apply_models(td_epoch,train_epochs=['move'],test_epochs=['hold_move','hold_move_ref_cue','full'])
 
-fig_gen_dict = {
-    'task_M1_pca':src.context_analysis.plot_hold_pca(td_train,array_name='M1',hue_order=['RTT','CST']),
-    'task_M1_lda':src.context_analysis.plot_M1_lda(td_train,hue_order=['RTT','CST']),
-    'task_beh':src.context_analysis.plot_hold_behavior(td_train,hue_order=['RTT','CST']),
-    'task_beh_lda':src.context_analysis.plot_beh_lda(td_train,hue_order=['RTT','CST']),
-    # 'task_M1_potent': src.plot_M1_hold_potent(td_train,hue_order=['RTT','CST']),
-    # 'task_M1_potent_lda': src.plot_M1_potent_lda(td_train,hue_order=['RTT','CST']),
-    # 'task_M1_null_lda': src.plot_M1_null_lda(td_train,hue_order=['RTT','CST']),
-    # LDA traces
-    'task_lda_trace':src.context_analysis.plot_M1_lda_traces(td_test.query('epoch=="hold_move"'),ref_event='idx_goCueTime',label_colors={'RTT':'r','CST':'b'}),
-    'task_lda_trace_pretask':src.context_analysis.plot_M1_lda_traces(td_test.query('epoch=="hold_move_ref_cue"'),ref_event='idx_pretaskHoldTime',label_colors={'RTT':'r','CST':'b'}),
-    'task_lda_trace':src.context_analysis.plot_M1_lda_traces(td_test.query('epoch=="full"'),ref_event='idx_goCueTime',label_colors={'RTT':'r','CST':'b'}),
-}
+def plot_separability(td_test,ref_time_col,ax=None,time_lims=[-0.8,5]):
+    sep_df_ref = (
+        td_test
+        .pipe(src.data.add_trial_time,ref_event='idx_goCueTime',column_name='Time from go cue (s)')
+        .pipe(src.data.add_trial_time,ref_event='idx_pretaskHoldTime',column_name='Time from pretask hold (s)')
+        .loc[:,['trial_id','task','epoch','Time from go cue (s)','Time from pretask hold (s)','M1_pred']]
+        .explode(['Time from go cue (s)','Time from pretask hold (s)','M1_pred'])
+        .assign(classify_success=lambda x: x['M1_pred']==x['task'])
+        .assign(trialtime_hash=lambda x: pd.to_timedelta(x[ref_time_col],'s'))
+        .loc[lambda x: (x[ref_time_col]>=time_lims[0]) & (x[ref_time_col]<=time_lims[1]),:]
+        .groupby('trialtime_hash')
+        .agg(**{
+            'Separability': ('classify_success',np.mean),
+            ref_time_col: (ref_time_col,np.mean),
+        })
+    )
+
+    if ax is None:
+        ax = plt.gca()
+
+    sns.lineplot(
+        ax=ax,
+        data=sep_df_ref,
+        x=ref_time_col,
+        y='Separability',
+    )
+    ax.plot(time_lims,[0.5,0.5],'k--')
+    ax.set_xlim(time_lims)
+    ax.set_ylim([0,1])
+    sns.despine(ax=ax,trim=True)
+
+    return ax
 ```
 
+Then we'll plot out the separabilities over time according to LDA models found from each epoch (ambiguous hold, cued hold, and post-go-cue). First, ambiguous hold.
+
+```{python}
+#| label: separability_dynamics_ambiguous_hold
+#| fig-cap: "Separability dynamics according to ambiguous hold LDA model, aligned by pre-task hold and go cue"
+#| 
+td_train,td_test = src.context_analysis.apply_models(
+    td_epoch,
+    train_epochs=['ambig_hold'],
+    test_epochs=['full'],
+)
+
+fig,axs = plt.subplots(1,2,figsize=(6,2), sharey=True, gridspec_kw={'width_ratios':[1,4]})
+plot_separability(td_test,'Time from pretask hold (s)',axs[0],time_lims=[-0.5,1])
+plot_separability(td_test,'Time from go cue (s)',axs[1],time_lims=[-1,5])
+sns.despine(ax=axs[1],left=True)
+```
+
+As expected, not much separability through the whole trial.
+
+Now we'll do the same for the cued hold epoch.
+
+```{python}
+#| label: separability_dynamics_cued_hold
+#| fig-cap: "Separability dynamics according to cued hold LDA model, aligned by pre-task hold and go cue"
+#| 
+td_train,td_test = src.context_analysis.apply_models(
+    td_epoch,
+    train_epochs=['hold'],
+    test_epochs=['full'],
+)
+
+fig,axs = plt.subplots(1,2,figsize=(6,2), sharey=True, gridspec_kw={'width_ratios':[1,4]})
+plot_separability(td_test,'Time from pretask hold (s)',axs[0],time_lims=[-0.5,1])
+plot_separability(td_test,'Time from go cue (s)',axs[1],time_lims=[-1,5])
+sns.despine(ax=axs[1],left=True)
+```
+
+Here, we see that the separability is high through the pre-task hold period, but then drops after the go cue.
+
+Finally, we'll do the same for the post-go-cue epoch.
+
+```{python}
+#| label: separability_dynamics_go
+#| fig-cap: "Separability dynamics according to post-go-cue LDA model, aligned by pre-task hold and go cue"
+#| 
+td_train,td_test = src.context_analysis.apply_models(
+    td_epoch,
+    train_epochs=['move'],
+    test_epochs=['full'],
+)
+
+fig,axs = plt.subplots(1,2,figsize=(6,2), sharey=True, gridspec_kw={'width_ratios':[1,4]})
+plot_separability(td_test,'Time from pretask hold (s)',axs[0],time_lims=[-0.5,1])
+plot_separability(td_test,'Time from go cue (s)',axs[1],time_lims=[-1,5])
+sns.despine(ax=axs[1],left=True)
+```
+
+Here, we see high separability that starts in the pre-task hold period and stays high until the end of the trial. Notably, this LDA model was trained with only the first 300 ms after the go cue, and there wasn't much movement during this period yet.
+
+The other thing we can do is look at how separable neural activity is along _any_ dimension in the neural state space. This is a bit more involved, since it requires fiting an LDA model at each time point (let's say 50 ms bin) and then looking at the separability of neural activity in the found dimension by plotting it out. I haven't done this yet, but I'm working on it...
