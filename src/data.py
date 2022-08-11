@@ -211,7 +211,7 @@ def relationize_td(trial_data):
 
 
 @pyaldata.copy_td
-def add_trial_time(trial_data, ref_event=None):
+def add_trial_time(trial_data, ref_event=None, column_name="trialtime"):
     """
     Add a trialtime column to trial_data, based on the bin_size and shape of hand_pos
 
@@ -224,12 +224,12 @@ def add_trial_time(trial_data, ref_event=None):
         - trial_data: DataFrame with trialtime column added
     """
     if ref_event is None:
-        trial_data["trialtime"] = [
+        trial_data[column_name] = [
             trial["bin_size"] * np.arange(trial["hand_pos"].shape[0])
             for (_, trial) in trial_data.iterrows()
         ]
     else:
-        trial_data["trialtime"] = [
+        trial_data[column_name] = [
             trial["bin_size"]
             * (np.arange(trial["hand_pos"].shape[0]) - trial[ref_event])
             for (_, trial) in trial_data.iterrows()
