@@ -161,7 +161,7 @@ def plot_hold_pca(td,array_name='M1',label_col='task',hue_order=['CO','CST']):
     '''
     assert type(label_col)==str, "label_col must be a string"
 
-    pca_fig,pca_ax = plt.subplots(1,1,figsize=(8,6))
+    pca_fig,pca_ax = plt.subplots(1,1,figsize=(6,4))
     sns.scatterplot(
         ax=pca_ax,
         data=td,
@@ -190,7 +190,7 @@ def plot_M1_lda_traces(td_smooth,ref_event='idx_goCueTime',label_col='task',labe
     '''
     assert type(label_col)==str, "label_col must be a string"
 
-    lda_fig,lda_ax = plt.subplots(1,1,figsize=(8,6))
+    lda_fig,lda_ax = plt.subplots(1,1,figsize=(6,4))
     for _,trial in data.add_trial_time(td_smooth,ref_event=ref_event).iterrows():
         lda_ax.plot(
             trial['trialtime'],
@@ -221,7 +221,7 @@ def plot_hold_behavior(td_hold,label_col='task',hue_order=['CO','CST']):
     '''
     assert type(label_col)==str, "label_col must be a string"
 
-    fig,[pos_ax,vel_ax] = plt.subplots(1,2,figsize=(10,6))
+    fig,[pos_ax,vel_ax] = plt.subplots(1,2,figsize=(6,4))
     sns.scatterplot(
         ax=pos_ax,
         data=td_hold,
@@ -262,7 +262,7 @@ def plot_M1_lda(td_hold,label_col='task',hue_order=['CO','CST']):
     TODO: add discriminability text somewhere in this plot
     '''
     # Hold-time LDA
-    lda_fig,lda_ax = plt.subplots(1,1,figsize=(8,6))
+    lda_fig,lda_ax = plt.subplots(1,1,figsize=(6,4))
     lda_ax.plot([td_hold['trial_id'].min(),td_hold['trial_id'].max()],[0,0],'k--')
     sns.scatterplot(
         ax=lda_ax,
@@ -289,7 +289,7 @@ def plot_beh_lda(td_hold,label_col='task',hue_order=['CO','CST']):
         lda_fig (Figure): Figure of lda plot
     '''
     # Hold-time LDA
-    lda_fig,lda_ax = plt.subplots(1,1,figsize=(8,6))
+    lda_fig,lda_ax = plt.subplots(1,1,figsize=(6,4))
     lda_ax.plot([td_hold['trial_id'].min(),td_hold['trial_id'].max()],[0,0],'k--')
     sns.scatterplot(
         ax=lda_ax,
@@ -317,7 +317,7 @@ def plot_M1_hold_potent(td,label_col='task',hue_order=['CO','CST']):
     '''
     assert type(label_col)==str, "label_col must be a string"
 
-    pca_fig,pca_ax = plt.subplots(1,1,figsize=(8,6))
+    pca_fig,pca_ax = plt.subplots(1,1,figsize=(6,4))
     sns.scatterplot(
         ax=pca_ax,
         data=td,
@@ -344,7 +344,7 @@ def plot_M1_potent_lda(td_hold,label_col='task',hue_order=['CO','CST']):
     TODO: add discriminability text somewhere in this plot
     '''
     # Hold-time LDA
-    lda_fig,lda_ax = plt.subplots(1,1,figsize=(8,6))
+    lda_fig,lda_ax = plt.subplots(1,1,figsize=(6,4))
     lda_ax.plot([td_hold['trial_id'].min(),td_hold['trial_id'].max()],[0,0],'k--')
     sns.scatterplot(
         ax=lda_ax,
@@ -373,7 +373,7 @@ def plot_M1_null_lda(td_hold,label_col='task',hue_order=['CO','CST']):
     TODO: add discriminability text somewhere in this plot
     '''
     # Hold-time LDA
-    lda_fig,lda_ax = plt.subplots(1,1,figsize=(8,6))
+    lda_fig,lda_ax = plt.subplots(1,1,figsize=(6,4))
     lda_ax.plot([td_hold['trial_id'].min(),td_hold['trial_id'].max()],[0,0],'k--')
     sns.scatterplot(
         ax=lda_ax,
