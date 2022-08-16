@@ -104,6 +104,8 @@ def apply_models(td,train_epochs=None,test_epochs=None,label_col='task'):
             np.row_stack(td_train['hand_vel'].values),
         ])
     )
+    td_test['beh_lda'] = [beh_lda_model.transform(np.column_stack([pos,vel])) for pos,vel in zip(td_test['rel_hand_pos'],td_test['hand_vel'])]
+    td_test['beh_pred'] = [beh_lda_model.predict(np.column_stack([pos,vel])) for pos,vel in zip(td_test['rel_hand_pos'],td_test['hand_vel'])]
 
     arrays = [name.replace('_rates','') for name in td_train.columns if name.endswith('_rates')]
     for array in arrays:
@@ -120,6 +122,53 @@ def apply_models(td,train_epochs=None,test_epochs=None,label_col='task'):
         td_test[f'{array}_pred'] = [lda_pipe.predict(sig) for sig in td_test[f'{array}_rates']]
 
     return td_train,td_test
+
+def plot_separability_dynamics(td,ref_time_col,time_lims=[-0.8,5],ax=None,pred_name='M1_pred'):
+    '''
+    Plot the dynamics of how well an LDA model separates the two tasks in the smoothed data
+
+    Args:
+        td (DataFrame): PyalData formatted structure of neural/behavioral data
+        ref_time_col (str): name of column to reference time by (used for aggregation)
+            Options are either "Time from go cue (s)" or "Time from pretask hold (s)"
+        time_lims (list): limits of time axis (default: [-0.8,5])
+        ax (Axes): axes to plot on (default: None--creates new figure)
+        pred_name (str): name of column to use for prediction (default: 'M1_pred')
+
+    Returns:
+        ax (Axes): axes with plot
+    '''
+    sep_df_ref = (
+        td.copy()
+        .pipe(data.add_trial_time,ref_event='idx_goCueTime',column_name='Time from go cue (s)')
+        .pipe(data.add_trial_time,ref_event='idx_pretaskHoldTime',column_name='Time from pretask hold (s)')
+        .loc[:,['trial_id','task','epoch','Time from go cue (s)','Time from pretask hold (s)',pred_name]]
+        .explode(['Time from go cue (s)','Time from pretask hold (s)',pred_name])
+        .assign(classify_success=lambda x: x[pred_name]==x['task'])
+        .assign(trialtime_hash=lambda x: pd.to_timedelta(x[ref_time_col],'s'))
+        .loc[lambda x: (x[ref_time_col]>=time_lims[0]) & (x[ref_time_col]<=time_lims[1]),:]
+        .groupby('trialtime_hash')
+        .agg(**{
+            'Separability': ('classify_success',np.mean),
+            ref_time_col: (ref_time_col,np.mean),
+        })
+    )
+
+    if ax is None:
+        ax = plt.gca()
+
+    sns.lineplot(
+        ax=ax,
+        data=sep_df_ref,
+        x=ref_time_col,
+        y='Separability',
+    )
+    ax.plot(time_lims,[0.5,0.5],'k--')
+    ax.set_xlim(time_lims)
+    ax.set_ylim([0,1])
+    sns.despine(ax=ax,trim=True)
+
+    return ax
 
 def plot_hold_pca(td,array_name='M1',label_col='task',hue_order=['CO','CST']):
     '''

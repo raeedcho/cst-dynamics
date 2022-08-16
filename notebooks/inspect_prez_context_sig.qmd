@@ -338,49 +338,13 @@ This suggests that there is more than one dimension of neural activity that sepa
 
 The previous results showed that neural activity may be separable by task throughout the trial, perhaps separating along different dimensions at different times. However, it was a little bit difficult to see the separability in the neural dynamics with all of those traces plotted together. We might be able to get a better picture by looking at how separable the neural activity is along a given dimension in 50 ms bins through the entire trial, referenced to different events in the trial (namely, go cue and pre-task hold cue).
 
-First, we'll define a function to process and plot the smoothed neural data to get separability aligned to different time indices (see code block for pipeline).
-
-```{python}
-
-def plot_separability(td_test,ref_time_col,ax=None,time_lims=[-0.8,5]):
-    sep_df_ref = (
-        td_test
-        .pipe(src.data.add_trial_time,ref_event='idx_goCueTime',column_name='Time from go cue (s)')
-        .pipe(src.data.add_trial_time,ref_event='idx_pretaskHoldTime',column_name='Time from pretask hold (s)')
-        .loc[:,['trial_id','task','epoch','Time from go cue (s)','Time from pretask hold (s)','M1_pred']]
-        .explode(['Time from go cue (s)','Time from pretask hold (s)','M1_pred'])
-        .assign(classify_success=lambda x: x['M1_pred']==x['task'])
-        .assign(trialtime_hash=lambda x: pd.to_timedelta(x[ref_time_col],'s'))
-        .loc[lambda x: (x[ref_time_col]>=time_lims[0]) & (x[ref_time_col]<=time_lims[1]),:]
-        .groupby('trialtime_hash')
-        .agg(**{
-            'Separability': ('classify_success',np.mean),
-            ref_time_col: (ref_time_col,np.mean),
-        })
-    )
-
-    if ax is None:
-        ax = plt.gca()
-
-    sns.lineplot(
-        ax=ax,
-        data=sep_df_ref,
-        x=ref_time_col,
-        y='Separability',
-    )
-    ax.plot(time_lims,[0.5,0.5],'k--')
-    ax.set_xlim(time_lims)
-    ax.set_ylim([0,1])
-    sns.despine(ax=ax,trim=True)
-
-    return ax
-```
-
-Then we'll plot out the separabilities over time according to LDA models found from each epoch (ambiguous hold, cued hold, and post-go-cue). First, ambiguous hold.
+We'll plot out the separabilities over time according to LDA models found from each epoch (ambiguous hold, cued hold, and post-go-cue) As a control, we'll also plot out the separability according to behavior. First, ambiguous hold.
 
 ```{python}
 #| label: separability_dynamics_ambiguous_hold
-#| fig-cap: "Separability dynamics according to ambiguous hold LDA model, aligned by pre-task hold and go cue"
+#| fig-cap:
+#|   - "Separability dynamics according to ambiguous hold **neural** LDA model, aligned by pre-task hold and go cue"
+#|   - "Separability dynamics according to ambiguous hold **behavioral** LDA model, aligned by pre-task hold and go cue"
 #| 
 td_train,td_test = src.context_analysis.apply_models(
     td_epoch,
@@ -389,8 +353,13 @@ td_train,td_test = src.context_analysis.apply_models(
 )
 
 fig,axs = plt.subplots(1,2,figsize=(6,2), sharey=True, gridspec_kw={'width_ratios':[1,4]})
-plot_separability(td_test,'Time from pretask hold (s)',axs[0],time_lims=[-0.5,1])
-plot_separability(td_test,'Time from go cue (s)',axs[1],time_lims=[-1,5])
+src.context_analysis.plot_separability_dynamics(td_test,'Time from pretask hold (s)',ax=axs[0],time_lims=[-0.5,1],pred_name='M1_pred')
+src.context_analysis.plot_separability_dynamics(td_test,'Time from go cue (s)',ax=axs[1],time_lims=[-1,5],pred_name='M1_pred')
+sns.despine(ax=axs[1],left=True)
+
+fig,axs = plt.subplots(1,2,figsize=(6,2), sharey=True, gridspec_kw={'width_ratios':[1,4]})
+src.context_analysis.plot_separability_dynamics(td_test,'Time from pretask hold (s)',ax=axs[0],time_lims=[-0.5,1],pred_name='beh_pred')
+src.context_analysis.plot_separability_dynamics(td_test,'Time from go cue (s)',ax=axs[1],time_lims=[-1,5],pred_name='beh_pred')
 sns.despine(ax=axs[1],left=True)
 ```
 
@@ -400,7 +369,9 @@ Now we'll do the same for the cued hold epoch.
 
 ```{python}
 #| label: separability_dynamics_cued_hold
-#| fig-cap: "Separability dynamics according to cued hold LDA model, aligned by pre-task hold and go cue"
+#| fig-cap:
+#|   - "Separability dynamics according to cued hold **neural** LDA model, aligned by pre-task hold and go cue"
+#|   - "Separability dynamics according to cued hold **behavioral** LDA model, aligned by pre-task hold and go cue"
 #| 
 td_train,td_test = src.context_analysis.apply_models(
     td_epoch,
@@ -409,8 +380,13 @@ td_train,td_test = src.context_analysis.apply_models(
 )
 
 fig,axs = plt.subplots(1,2,figsize=(6,2), sharey=True, gridspec_kw={'width_ratios':[1,4]})
-plot_separability(td_test,'Time from pretask hold (s)',axs[0],time_lims=[-0.5,1])
-plot_separability(td_test,'Time from go cue (s)',axs[1],time_lims=[-1,5])
+src.context_analysis.plot_separability_dynamics(td_test,'Time from pretask hold (s)',ax=axs[0],time_lims=[-0.5,1],pred_name='M1_pred')
+src.context_analysis.plot_separability_dynamics(td_test,'Time from go cue (s)',ax=axs[1],time_lims=[-1,5],pred_name='M1_pred')
+sns.despine(ax=axs[1],left=True)
+
+fig,axs = plt.subplots(1,2,figsize=(6,2), sharey=True, gridspec_kw={'width_ratios':[1,4]})
+src.context_analysis.plot_separability_dynamics(td_test,'Time from pretask hold (s)',ax=axs[0],time_lims=[-0.5,1],pred_name='beh_pred')
+src.context_analysis.plot_separability_dynamics(td_test,'Time from go cue (s)',ax=axs[1],time_lims=[-1,5],pred_name='beh_pred')
 sns.despine(ax=axs[1],left=True)
 ```
 
@@ -421,6 +397,9 @@ Finally, we'll do the same for the post-go-cue epoch.
 ```{python}
 #| label: separability_dynamics_go
 #| fig-cap: "Separability dynamics according to post-go-cue LDA model, aligned by pre-task hold and go cue"
+#| fig-cap:
+#|   - "Separability dynamics according to post-go-cue **neural** LDA model, aligned by pre-task hold and go cue"
+#|   - "Separability dynamics according to post-go-cue **behavioral** LDA model, aligned by pre-task hold and go cue"
 #| 
 td_train,td_test = src.context_analysis.apply_models(
     td_epoch,
@@ -429,11 +408,20 @@ td_train,td_test = src.context_analysis.apply_models(
 )
 
 fig,axs = plt.subplots(1,2,figsize=(6,2), sharey=True, gridspec_kw={'width_ratios':[1,4]})
-plot_separability(td_test,'Time from pretask hold (s)',axs[0],time_lims=[-0.5,1])
-plot_separability(td_test,'Time from go cue (s)',axs[1],time_lims=[-1,5])
+src.context_analysis.plot_separability_dynamics(td_test,'Time from pretask hold (s)',ax=axs[0],time_lims=[-0.5,1],pred_name='M1_pred')
+src.context_analysis.plot_separability_dynamics(td_test,'Time from go cue (s)',ax=axs[1],time_lims=[-1,5],pred_name='M1_pred')
+sns.despine(ax=axs[1],left=True)
+
+fig,axs = plt.subplots(1,2,figsize=(6,2), sharey=True, gridspec_kw={'width_ratios':[1,4]})
+src.context_analysis.plot_separability_dynamics(td_test,'Time from pretask hold (s)',ax=axs[0],time_lims=[-0.5,1],pred_name='beh_pred')
+src.context_analysis.plot_separability_dynamics(td_test,'Time from go cue (s)',ax=axs[1],time_lims=[-1,5],pred_name='beh_pred')
 sns.despine(ax=axs[1],left=True)
 ```
 
 Here, we see high separability that starts in the pre-task hold period and stays high until the end of the trial. Notably, this LDA model was trained with only the first 300 ms after the go cue, and there wasn't much movement during this period yet.
+
+Importantly, the behavioral separability in all of these models remains not much higher than chance level, rising slightly and *briefly* during the periods in which the given LDA model is trained (though not for the ambiguous hold period model). This suggests that the separability in the neural activity is something beyond simply a behavioral difference between the two tasks.
+
+## Any-dimension separability dynamics
 
 The other thing we can do is look at how separable neural activity is along _any_ dimension in the neural state space. This is a bit more involved, since it requires fiting an LDA model at each time point (let's say 50 ms bin) and then looking at the separability of neural activity in the found dimension by plotting it out. I haven't done this yet, but I'm working on it...
