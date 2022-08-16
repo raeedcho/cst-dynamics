@@ -77,7 +77,7 @@ td = (
     )
     .pipe(src.data.remove_correlated_units)
     .pipe(
-        src.data.remove_all_low_firing_neurons
+        src.data.remove_all_low_firing_neurons,
         threshold=0.1,
         divide_by_bin_size=True,
         verbose=inspection_params['verbose']
