@@ -99,7 +99,14 @@ td_cst = (
 )
 ```
 
-# Neural trajectories (or "What can LFADS do for us?")
+# What can LFADS do for us?
+
+LFADS is a powerful tool, but it's important to make sure that the benefits outweigh the costs of running the models. Ideally, we'd like LFADS to reveal dynamical structure in the neural data that's difficult or impossible to see at the single trial level. To make sure that LFADS is actually doing what we want it to do, we'll need to run a few sanity checks. There are a few things we expect from a good dynamic model:
+
+1. Neural trajectories should look like they have some more structure in them at the single trial level than previously--LFADS has previously shown single trial structure that has only been found at the trial average level, so that's what we expect. This check is more of a gut-check, since we don't really know what structure we're looking for, but it's something that we'll keep in mind throughout the analysis.
+2. LFADS-smoothing should increase behavioral decoding performance. Because LFADS only has access to the neural data (and because of the chopping and merging, it doesn't even have access to trial timing), an improvement in behavioral decoding goes a long way towards showing that LFADS is actually revealing relevant structure in the neural data, rather than just smoothing it out arbitrarily.
+
+## Smoother (more structured?) neural trajectories
 
 First thing to do is to take a look at the neural trajectories in CST and CO trials, with and without LFADS. This will let us see whether LFADS appears to reveal any structure in the data that isn't there when we just look at smoothed neural activity.
 
@@ -178,6 +185,12 @@ cst_lfads_trace_plot.display()
 ```
 
 Here, both LFADS and Gaussian-smoothed neural trajectories look a bit messy, but there does appear to be a little bit more structure to the LFADS-smoothed trajectories, which are sort of arranged in a butterfly-like shape, with each lobe corresponding to either left or right hand movement.
+
+## LFADS-smoothing improves neural decoding accuracy
+
+...this is currently in another notebook.
+
+# Tangling in LFADS-smoothed neural trajectories
 
 ```{python}
 td_co = src.data.add_trial_time(td_co,ref_event='idx_goCueTime')
