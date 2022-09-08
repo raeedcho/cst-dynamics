@@ -8,6 +8,7 @@ from . import subspace_tools,data,util
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
 from sklearn.decomposition import PCA
 from sklearn.pipeline import Pipeline
+from sklearn.model_selection import cross_val_score
 
 def extract_td_epochs(td):
     '''
@@ -152,6 +153,62 @@ def plot_separability_dynamics(td,ref_time_col,time_lims=[-0.8,5],ax=None,pred_n
             'Separability': ('classify_success',np.mean),
             ref_time_col: (ref_time_col,np.mean),
         })
+    )
+
+    if ax is None:
+        ax = plt.gca()
+
+    sns.lineplot(
+        ax=ax,
+        data=sep_df_ref,
+        x=ref_time_col,
+        y='Separability',
+    )
+    ax.plot(time_lims,[0.5,0.5],'k--')
+    ax.set_xlim(time_lims)
+    ax.set_ylim([0,1])
+    sns.despine(ax=ax,trim=True)
+
+    return ax
+
+def plot_any_dim_separability(td,signal='M1_pca',ref_time_col='Time from go cue (s)',time_lims=[-0.8,5],ax=None):
+    '''
+    Calculates and plots how separable neural states are between tasks. This function
+    first runs PCA on neural activity, then for each timepoint, fits an LDA model to
+    determine how separable tasks are at that time across trials (aligned by whatever
+    reference is provided). The function then plots out the timecourse of this
+    separability in the provided Axes.
+
+    Args:
+        td (DataFrame): PyalData formatted structure of neural/behavioral data
+        signal (str): name of signal column to work on (default: 'M1_pca')
+        ref_time_col (str): name of column to reference time by (used for aggregation)
+            Options are either "Time from go cue (s)" or "Time from pretask hold (s)"
+        time_lims (list): limits of time axis (default: [-0.8,5])
+        ax (Axes): axes to plot on (default: None--creates new figure)
+
+    Returns:
+        ax (Axes): axes with plot
+    '''
+
+    sep_df_ref = (
+        td.copy()
+        .pipe(data.add_trial_time,ref_event='idx_goCueTime',column_name='Time from go cue (s)')
+        .pipe(data.add_trial_time,ref_event='idx_pretaskHoldTime',column_name='Time from pretask hold (s)')
+        .loc[:,['trial_id','task','epoch','Time from go cue (s)','Time from pretask hold (s)',signal]]
+        .explode(['Time from go cue (s)','Time from pretask hold (s)',signal])
+        .loc[lambda x: (x[ref_time_col]>=time_lims[0]) & (x[ref_time_col]<=time_lims[1]),:]
+        .assign(trialtime_hash=lambda x: pd.to_timedelta(x[ref_time_col],'s'))
+        .groupby('trialtime_hash')
+        .apply(lambda x: pd.Series({
+            'Separability': np.mean(cross_val_score(
+                LinearDiscriminantAnalysis(),
+                np.row_stack(x[signal]),
+                x['task'],
+                cv=5,
+            )),
+            ref_time_col: np.mean(x[ref_time_col]),
+        }))
     )
 
     if ax is None:

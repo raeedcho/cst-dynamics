@@ -211,6 +211,7 @@ Because the trials have randomized lengths, we'll have to reference these neural
 # labeled for fitting models and predicting trial type
 # Note:The epoch extraction in the code below requires a bit of a kludge to rename the variables,
 # but it's a simple way to get the data into the right format for the analysis with the current state of the code.
+# TODO: fix the backend code to specify which array we want
 td_epoch = src.context_analysis.extract_td_epochs(
     td.rename(columns={'M1_rates':'M1_orig_rates','MC_rates':'M1_rates'})
 )
@@ -424,4 +425,54 @@ Importantly, the behavioral separability in all of these models remains not much
 
 ## Any-dimension separability dynamics
 
-The other thing we can do is look at how separable neural activity is along _any_ dimension in the neural state space. This is a bit more involved, since it requires fiting an LDA model at each time point (let's say 50 ms bin) and then looking at the separability of neural activity in the found dimension by plotting it out. I haven't done this yet, but I'm working on it...
+The other thing we can do is look at how separable neural activity is along _any_ dimension in the neural state space. This is a bit more involved, since it requires fiting an LDA model at each time point (let's say 50 ms bin) and then looking at the separability of neural activity in the found dimension.
+
+```{python}
+#| label: separability_dynamics_any_dim
+#| fig-cap: "Separability dynamics along any dimension, aligned by pre-task hold and go cue"
+#| fig-cap:
+#|   - "Separability dynamics along any neural dimension, aligned by pre-task hold and go cue"
+#|   - "Separability dynamics along any behavioral dimension, aligned by pre-task hold and go cue"
+
+array = 'M1'
+td_full = (
+    td_epoch.copy()
+    .loc[td_epoch['epoch']=='full',:]
+    .pipe(pyaldata.dim_reduce,PCA(n_components=15),f'{array}_rates',f'{array}_pca')
+    .assign(beh_sig=lambda x: x.apply(lambda y: np.column_stack([y['rel_hand_pos'],y['hand_vel']]),axis=1))
+)
+
+fig,axs = plt.subplots(1,2,figsize=(6,2), sharey=True, gridspec_kw={'width_ratios':[1,4]})
+src.context_analysis.plot_any_dim_separability(
+    td_full,
+    signal='M1_pca',
+    ref_time_col='Time from pretask hold (s)',
+    time_lims=[-0.5,1],
+    ax=axs[0],
+)
+src.context_analysis.plot_any_dim_separability(
+    td_full,
+    signal='M1_pca',
+    ref_time_col='Time from go cue (s)',
+    time_lims=[-1,5],
+    ax=axs[1],
+)
+sns.despine(ax=axs[1],left=True)
+
+fig,axs = plt.subplots(1,2,figsize=(6,2), sharey=True, gridspec_kw={'width_ratios':[1,4]})
+src.context_analysis.plot_any_dim_separability(
+    td_full,
+    signal='beh_sig',
+    ref_time_col='Time from pretask hold (s)',
+    time_lims=[-0.5,1],
+    ax=axs[0],
+)
+src.context_analysis.plot_any_dim_separability(
+    td_full,
+    signal='beh_sig',
+    ref_time_col='Time from go cue (s)',
+    time_lims=[-1,5],
+    ax=axs[1],
+)
+sns.despine(ax=axs[1],left=True)
+```
