@@ -111,20 +111,21 @@ def apply_models(td,train_epochs=None,test_epochs=None,label_col='task'):
     td_test['beh_pred'] = [beh_lda_model.predict(np.column_stack([pos,vel])) for pos,vel in zip(td_test['rel_hand_pos'],td_test['hand_vel'])]
 
     arrays = [name.replace('_rates','') for name in td_train.columns if name.endswith('_rates')]
+    lda_pipes={}
     for array in arrays:
-        lda_pipe = Pipeline([
+        lda_pipes[array] = Pipeline([
             ('pca',PCA(n_components=15)),
             ('lda',LinearDiscriminantAnalysis()),
         ])
-        td_train[f'{array}_lda'] = lda_pipe.fit_transform(
+        td_train[f'{array}_lda'] = lda_pipes[array].fit_transform(
             np.row_stack(td_train[f'{array}_rates'].values),
             td_train[label_col]
         )
-        td_train[f'{array}_pred'] = lda_pipe.predict(np.row_stack(td_train[f'{array}_rates']))
-        td_test[f'{array}_lda'] = [lda_pipe.transform(sig) for sig in td_test[f'{array}_rates']]
-        td_test[f'{array}_pred'] = [lda_pipe.predict(sig) for sig in td_test[f'{array}_rates']]
+        td_train[f'{array}_pred'] = lda_pipes[array].predict(np.row_stack(td_train[f'{array}_rates']))
+        td_test[f'{array}_lda'] = [lda_pipes[array].transform(sig) for sig in td_test[f'{array}_rates']]
+        td_test[f'{array}_pred'] = [lda_pipes[array].predict(sig) for sig in td_test[f'{array}_rates']]
 
-    return td_train,td_test
+    return td_train,td_test,lda_pipes
 
 def plot_separability_dynamics(td,ref_time_col,time_lims=[-0.8,5],ax=None,pred_name='M1_pred'):
     '''

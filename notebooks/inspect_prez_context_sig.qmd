@@ -232,7 +232,7 @@ First, let's take a look at separability in the neural data between CST and RTT 
 #|   - "Ambiguous Hold Period LDA dynamics (trial-type cue ref)"
 #|   - "Ambiguous Hold Period LDA dynamics (full trial)"
 
-td_train,td_test = src.context_analysis.apply_models(
+td_train,td_test_ambig_hold,ambig_hold_lda = src.context_analysis.apply_models(
     td_epoch,
     train_epochs=['ambig_hold'],
     test_epochs=['hold_move','hold_move_ref_cue','full'],
@@ -271,7 +271,7 @@ Now we can take a look at contextual separation in the cued hold period, where t
 #|   - "Pre-task Hold Period LDA dynamics (trial-type cue ref)"
 #|   - "Pre-task Hold Period LDA dynamics (full trial)"
  
-td_train,td_test = src.context_analysis.apply_models(
+td_train,td_test_cued_hold,cued_hold_lda = src.context_analysis.apply_models(
     td_epoch,
     train_epochs=['hold'],
     test_epochs=['hold_move','hold_move_ref_cue','full'],
@@ -310,7 +310,7 @@ Lastly, for completeness, we run these same analyses on the 300 ms just after th
 #|   - "Movement Period LDA dynamics (trial-type cue ref)"
 #|   - "Movement Period LDA dynamics (full trial)"
  
-td_train,td_test = src.context_analysis.apply_models(
+td_train,td_test_move,move_lda = src.context_analysis.apply_models(
     td_epoch,
     train_epochs=['move'],
     test_epochs=['hold_move','hold_move_ref_cue','full'],
@@ -475,4 +475,134 @@ src.context_analysis.plot_any_dim_separability(
     ax=axs[1],
 )
 sns.despine(ax=axs[1],left=True)
+```
+
+## How similar are the cued hold and movement period context dimensions?
+
+From previous figures, it seems like there are multiple neural dimensions that separate the two tasks at different times. Open question: how are the two vectors aligned with each other?
+
+Note: we also have to figure out whether these two vectors are significantly different from random, either more aligned or more orthogonal. This means we should also find the distribution of angles between random vectors in the neural space.
+
+```{python}
+#| label: angle_between_axes
+#| fig-cap: "Angle between cued hold, post-go, and late movement axes (colors) compared to distribution of angles between random pairs of vectors in full neural space (gray)"
+
+def plot_angles(array,ax,label=False):
+    dimensionality = td_full[f'{array}_rates'].values[0].shape[1]
+
+    def get_lda_axis(skpipe):
+        tester = np.eye(dimensionality)
+        intercept = skpipe.get_params()['lda'].intercept_
+        return skpipe.transform(tester).squeeze()-intercept
+
+    cued_hold_axis = get_lda_axis(cued_hold_lda[array])
+    move_axis = get_lda_axis(move_lda[array])
+    move_late_axis = get_lda_axis(move_late_lda[array])
+    
+    rand_vecs = np.random.randn(100,dimensionality)
+    angs = np.array([
+        src.util.angle_between(vec1,vec2)
+        for vec1 in rand_vecs
+        for vec2 in rand_vecs
+        if not np.all(vec1==vec2)
+    ])
+
+    ax.hist(angs,40,color=[0.8,0.8,0.8])
+    ax.bar(src.util.angle_between(cued_hold_axis,move_axis),200,width=3,color='r')
+    ax.bar(src.util.angle_between(move_axis,move_late_axis),200,width=3,color='g')
+    ax.bar(src.util.angle_between(cued_hold_axis,move_late_axis),200,width=3,color='b')
+    if label:
+        ax.text(src.util.angle_between(cued_hold_axis,move_axis),100,'Angle between cued hold axis\nand post-go axis',color='r')
+        ax.text(src.util.angle_between(move_axis,move_late_axis),200,'Angle between post-go axis\nand late move axis',color='g')
+        ax.text(src.util.angle_between(cued_hold_axis,move_late_axis),300,'Angle between cued hold axis\nand late move axis',color='b')
+        ax.text(120,0,'Angle between\nrandom pairs of vectors',color=[0.5,0.5,0.5])
+    ax.set_ylabel(f"{array}\n({dimensionality} dims)")
+    ax.set_xlim([0,180])
+    ax.set_yticks([])
+
+fig,ax = plt.subplots(3,1,sharex=True)
+plot_angles(array='M1',ax=ax[0],label=True)
+plot_angles(array='PMd',ax=ax[1])
+plot_angles(array='MC',ax=ax[2])
+ax[2].set_xlabel(f"Angle between vectors")
+sns.despine(fig=fig,trim=True,left=True)
+```
+
+## How many different contextual neural dimensions are there?
+
+By choosing two different epochs, we found two different separability profiles, hinting different contextual dimensions separating the two tasks at different times. A reasonable question might be: how many different dimensions are separating the two tasks in neural activity through time? Relatedly, how many different separability profiles are there? There's at least one with transient separability during the cued hold period and one with separability throughout most of the movement period. It's possible those are the only profiles, but there might be more if we choose different training epochs.
+
+So we're going to look at how much these separability profiles change based on which time bine we train off of.
+
+```{python}
+array = 'M1'
+td_full = (
+    td_epoch.copy()
+    .loc[td_epoch['epoch']=='full',:]
+    .pipe(pyaldata.dim_reduce,PCA(n_components=15),f'{array}_rates',f'{array}_pca')
+    .assign(beh_sig=lambda x: x.apply(lambda y: np.column_stack([y['rel_hand_pos'][:,[0,1,2]],y['hand_vel'][:,:]]),axis=1))
+)
+
+M1_sep_profiles,M1_lda_coefs = src.context_analysis.get_train_test_separability(td_full,signal='M1_pca')
+# PMd_sep_profiles,PMd_lda_coefs = src.context_analysis.get_train_test_separability(td_full,signal='PMd_pca')
+# MC_sep_profiles,MC_lda_coefs = src.context_analysis.get_train_test_separability(td_full,signal='MC_pca')
+beh_sep_profiles,_ = src.context_analysis.get_train_test_separability(td_full,signal='beh_sig')
+
+fig,axs = plt.subplots(1,2)
+sns.heatmap(
+    data = (
+        M1_sep_profiles
+        .reset_index()
+        .assign(**{
+            'Time from go cue (s)': lambda x: x['test_time']/np.timedelta64(1,'s'),
+            'Training Time (s)': lambda x: x['train_time']/np.timedelta64(1,'s'),
+        })
+        .pivot('Training Time (s)','Time from go cue (s)','Separability')
+    ),
+    vmin=0.5,
+    vmax=1,
+    ax=axs[0],
+)
+sns.heatmap(
+    data = (
+        beh_sep_profiles
+        .reset_index()
+        .assign(**{
+            'Time from go cue (s)': lambda x: x['test_time']/np.timedelta64(1,'s'),
+            'Training Time (s)': lambda x: x['train_time']/np.timedelta64(1,'s'),
+        })
+        .pivot('Training Time (s)','Time from go cue (s)','Separability')
+    ),
+    vmin=0.5,
+    vmax=1,
+    ax=axs[1],
+)
+
+from scipy.spatial.distance import pdist,squareform
+def plot_lda_coef_angle(lda_coefs,ax=None):
+    coefs = np.row_stack(lda_coefs)
+    cos_dist = squareform(pdist(coefs,metric='cosine'))
+    
+    if ax is None:
+        ax = plt.gca()
+
+    sns.heatmap((180/np.pi)*np.arccos(1-cos_dist),vmax=90,vmin=0,ax=ax)
+    return ax
+
+ang_fig, ang_ax = plt.subplots(1,1)
+ang_ax = plot_lda_coef_angle(M1_lda_coefs)
+ang_ax.set_title('Angle between LDA axes trained at different time bins (deg)')
+ang_ax.set_xlabel('Time bin')
+ang_ax.set_ylabel('Time bin')
+```
+
+Seems like there's two main blocks of separability: one transient during the cued hold, and one tonic through the movement period. It also looks like the LDA axes during the cued hold period are pretty much orthogonal to the ones during the thick of movement. Possibly the post-go cue axes are somewhere in between.
+
+At this point, this document is getting a bit unwieldy. I'm going to freeze it here and move some of this stuff over to a new document focusing on these separability metrics. For the purposes of reproducability, here's the git hash of the commit I was on the last time this document was rendered:
+
+```{python}
+import git
+
+repo = git.Repo(search_parent_directories=True)
+short_hash = repo.head.object.hexsha[:10]
 ```
