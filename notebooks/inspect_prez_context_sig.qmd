@@ -368,29 +368,6 @@ fig_gen_dict = {
     'task_lda_trace_pretask':src.context_analysis.plot_M1_lda_traces(td_test_move.query('epoch=="hold_move_ref_cue"'),ref_event='idx_pretaskHoldTime',label_colors={'RTT':'r','CST':'b'}),
     'task_lda_trace':src.context_analysis.plot_M1_lda_traces(td_test_move.query('epoch=="full"'),ref_event='idx_goCueTime',label_colors={'RTT':'r','CST':'b'}),
 }
-```
-
-Overall, these plots look fairly similar to the previous (pre-task hold period) figures. The behavior in this epoch still seems similarly distributed between the two tasks, which suggests that the monkey hasn't quite started moving in earnest yet. Also, the neural activity is still pretty separable in this epoch (0.79, compared to behavior's 0.59). However, one striking difference between these figures and the previous set is in the dynamics. Neural activity still separates around 300 ms after the pre-task cued hold period begins, but this separation appears to continue far beyond the go cue into the rest of the trial.
-
-This suggests that there is more than one dimension of neural activity that separate the tasks, with at least one dimension that retains the separation through the entire trial and one (possibly overlapping dimension) in which the separability collapses once the monkey starts to move. This collapsing dimension is reminiscent of a preparatory dimension, while the full-trial separability dimension suggests that behavior occurs in separate regions of the neural state space.
-
-## A more careful look at the dynamics of neural separability
-
-The previous results showed that neural activity may be separable by task throughout the trial, perhaps separating along different dimensions at different times. However, it was a little bit difficult to see the separability in the neural dynamics with all of those traces plotted together. We might be able to get a better picture by looking at how separable the neural activity is along a given dimension in 50 ms bins through the entire trial, referenced to different events in the trial (namely, go cue and pre-task hold cue).
-
-We'll plot out the separabilities over time according to LDA models found from each epoch (ambiguous hold, cued hold, and post-go-cue) As a control, we'll also plot out the separability according to behavior. First, ambiguous hold.
-
-```{python}
-#| label: separability_dynamics_ambiguous_hold
-#| fig-cap:
-#|   - "Separability dynamics according to ambiguous hold **neural** LDA model, aligned by pre-task hold and go cue"
-#|   - "Separability dynamics according to ambiguous hold **behavioral** LDA model, aligned by pre-task hold and go cue"
-#| 
-td_train,td_test = src.context_analysis.apply_models(
-    td_epoch,
-    train_epochs=['ambig_hold'],
-    test_epochs=['full'],
-)
 
 fig,axs = plt.subplots(1,2,figsize=(6,2), sharey=True, gridspec_kw={'width_ratios':[1,4]})
 src.context_analysis.plot_separability_dynamics(td_test_move,'Time from pretask hold (s)',ax=axs[0],time_lims=[-0.5,1],pred_name='M1_pred')
@@ -459,7 +436,7 @@ Separability seems similar to the post-go cue separability here.
 
 ## Any-dimension separability dynamics
 
-The other thing we can do is look at how separable neural activity is along _any_ dimension in the neural state space. This is a bit more involved, since it requires fiting an LDA model at each time point (let's say 50 ms bin) and then looking at the separability of neural activity in the found dimension.
+Another thing we can do is look at how separable neural activity is along _any_ dimension in the neural state space. This is a bit more involved, since it requires fiting an LDA model at each time point (let's say 50 ms bin) and then looking at the separability of neural activity in the found dimension.
 
 ```{python}
 #| label: separability_dynamics_any_dim
@@ -473,7 +450,7 @@ td_full = (
     td_epoch.copy()
     .loc[td_epoch['epoch']=='full',:]
     .pipe(pyaldata.dim_reduce,PCA(n_components=15),f'{array}_rates',f'{array}_pca')
-    .assign(beh_sig=lambda x: x.apply(lambda y: np.column_stack([y['rel_hand_pos'],y['hand_vel']]),axis=1))
+    .assign(beh_sig=lambda x: x.apply(lambda y: np.column_stack([y['rel_hand_pos'][:,:],y['hand_vel'][:,:]]),axis=1))
 )
 
 fig,axs = plt.subplots(1,2,figsize=(6,2), sharey=True, gridspec_kw={'width_ratios':[1,4]})
