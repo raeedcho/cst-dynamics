@@ -28,6 +28,8 @@ import numpy as np
 import pandas as pd
 
 from sklearn.decomposition import PCA
+from dPCA.dPCA import dPCA
+from src import dpca_wrap
 
 import seaborn as sns
 import k3d
@@ -65,8 +67,14 @@ def task_spec_preproc_pipeline(td_task):
         # Note: this runs soft normalization on each task individually instead of across tasks
         # TODO: fix this to make soft normalization across tasks (will have to deal with nans somehow)
         .pipe(pyaldata.soft_normalize_signal,signals=['M1_rates','lfads_rates'])
-        .pipe(pyaldata.dim_reduce,PCA(n_components=analysis_params['num_dims']),'M1_rates','M1_pca')
-        .pipe(pyaldata.dim_reduce,PCA(n_components=analysis_params['num_dims']),'lfads_rates','lfads_pca')
+        .assign(
+            M1_state=lambda x: x['M1_rates'],
+            lfads_state=lambda x: x['lfads_rates'],
+        )
+        .pipe(pyaldata.center_signal,'M1_state')
+        .pipe(pyaldata.center_signal,'lfads_state')
+        .pipe(pyaldata.dim_reduce,PCA(n_components=analysis_params['num_dims']),'M1_state','M1_pca')
+        .pipe(pyaldata.dim_reduce,PCA(n_components=analysis_params['num_dims']),'lfads_state','lfads_pca')
         .pipe(pyaldata.add_gradient,'lfads_pca',normalize=True)
         .pipe(pyaldata.add_gradient,'M1_pca',normalize=True)
     )
@@ -538,7 +546,7 @@ tangling_speed_corr = (
     cocst_tangling.groupby(['Task','trial_id'])
     .apply(
         lambda s: pd.Series({
-            'Cross-correlation': src.analysis.normalized_cross_correlation(s['LFADS tangling'],np.abs(s['X hand velocity'])),
+            'Cross-correlation': src.analysis.normalized_cross_correlation(s['LFADS tangling'],(s['X hand velocity'])),
             'Lag bin': correlation_lags(len(s['LFADS tangling']),len(s['X hand velocity'])),
             'Lag time (s)': correlation_lags(len(s['LFADS tangling']),len(s['X hand velocity']))*analysis_params['bin_size'],
         })
@@ -559,6 +567,7 @@ tang_speed_ax.plot(
     'k-',
 )
 tang_speed_ax.set_xlim([-1,1])
+tang_speed_ax.set_ylim([-0.2,0.2])
 
 sns.despine(ax=tang_speed_ax,trim=True)
 ```
@@ -574,7 +583,7 @@ tangling_vel_corr = (
     cocst_tangling.groupby(['Task','trial_id'])
     .apply(
         lambda s: pd.Series({
-            'Cross-correlation': src.analysis.normalized_cross_correlation(s['LFADS tangling'],(s['X cursor velocity'])),
+            'Cross-correlation': src.analysis.normalized_cross_correlation(s['LFADS tangling'],np.abs(s['X cursor velocity'])),
             'Lag bin': correlation_lags(len(s['LFADS tangling']),len(s['X hand velocity'])),
             'Lag time (s)': correlation_lags(len(s['LFADS tangling']),len(s['X hand velocity']))*analysis_params['bin_size'],
         })
@@ -600,9 +609,83 @@ tang_vel_ax.plot(
     [0,0],
     'k-',
 )
-tang_vel_ax.set_xlim([-2,2])
-tang_vel_ax.set_ylim([-.2,.2])
+tang_vel_ax.set_xlim([-1,1])
+tang_vel_ax.set_ylim([-.4,.4])
 
 sns.despine(ax=tang_vel_ax,trim=True)
 ```
 
+Interestingly, there's a small positive correlation at negative lags that drops pretty sharply at positive lags. Again, since we know that tangling is non-negative, that means that prior to periods of high tangling, the cursor velocity tends to be positive, and after the high tangling, the cursor velocity tends to drop to zero briefly. I'm not entirely sure if this reasoning is sound, but if so, it might make some sense--I think it matches with the observation that pre-tangling hand velocity is negative, and post-tangling hand velocity is positive, meaning that the monkey is moving the hand to the left, then tangling, then moving the hand to the right, which drops the cursor velocity near zero (which is likely a goal for monkeys who are good at the task).
+
+I think a better way to look at this would be to take a look at some sensorimotor plots (plotting hand position against cursor position through a trial) and color the points by the tangling value.
+
+```{python}
+rand_cst_trial_id = np.random.choice(list(
+    cocst_tangling
+    .groupby('Task')
+    .get_group('CST')
+    .groupby('trial_id')
+    .groups.keys()
+))
+
+trial = (
+    cocst_tangling.loc[('CST',rand_cst_trial_id),:]
+    .query('`Time from go cue` > 0')
+    .query('`Time from go cue` < 5')
+)
+
+fig,ax = plt.subplots(1,1,figsize=(6,6))
+ax.plot([0,0],[-50,50],'k-')
+ax.plot([-50,50],[0,0],'k-')
+ax.plot([-50,50],[50,-50],'k--')
+sc = ax.scatter(
+    trial['X cursor position'],
+    trial['X hand position'],
+    c=trial['LFADS tangling'],
+    vmin=0,
+    vmax=1000,
+)
+ax.set_xlim(trial['X hand position'].abs().max()*np.array([-1,1]))
+ax.set_ylim(trial['X hand position'].abs().max()*np.array([-1,1]))
+ax.set_xlabel('Cursor position (cm)')
+ax.set_ylabel('Hand position (cm)')
+fig.colorbar(sc)
+
+sns.despine(ax=ax,trim=True)
+```
+
+Seems like maybe there's something that looks like high tangling before large movements...
+
+Trying dPCA to take a look at the condition invariant signal. Possibly those large movements (post-high tangling) could be like center-out movements, which have a signature condition-invariant rotational 
+
+```{python}
+
+# Compose the neural data tensor
+# This is a 4D tensor with dimensions (num_trials, num_neurons, num_targets, num_time_bins)
+neural_tensor = dpca_wrap.form_neural_tensor(td_co,'lfads_state',cond_cols='tgtDir')
+
+# set up and fit dpca
+dpca = dPCA(labels='st',join={'s':['s','st']},regularizer='auto')
+dpca.protect = ['t']
+latent_dict = dpca.fit_transform(np.mean(neural_tensor,axis=0),trialX=neural_tensor)
+
+@pyaldata.copy_td
+def add_dpca_projections(td,dpca):
+    for key,cond in {'t':'time','s':'target'}.items():
+        td['lfads_dpca_'+cond] = [dpca.transform(rates.T,marginalization=key).T for rates in td['lfads_state']]
+
+    return td
+
+# add dPCA projections to trial data
+td_co = add_dpca_projections(td_co,dpca)
+
+# add dpca projections to CST data
+td_cst = add_dpca_projections(td_cst,dpca)
+
+# temp plotting
+dpca_wrap.plot_dpca(td_co,latent_dict)
+dpca_wrap.plot_dpca_projection(td_co,'lfads'),
+dpca_wrap.plot_dpca_projection(td_cst,'lfads'),
+dpca_wrap.plot_cis_traces(td_co,'lfads'),
+dpca_wrap.plot_cis_traces(td_cst,'lfads'),
+```
