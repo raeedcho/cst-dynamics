@@ -87,9 +87,9 @@ td = (
     .pipe(src.data.fill_kinematic_signals)
     .pipe(src.data.rebin_data,new_bin_size=inspection_params['bin_size'])
     .pipe(pyaldata.soft_normalize_signal,signals=['M1_rates','PMd_rates','MC_rates'])
-    .pipe(pyaldata.dim_reduce,PCA(n_components=3),'M1_rates','M1_pca')
-    .pipe(pyaldata.dim_reduce,PCA(n_components=3),'PMd_rates','PMd_pca')
-    .pipe(pyaldata.dim_reduce,PCA(n_components=3),'MC_rates','MC_pca')
+    .pipe(pyaldata.dim_reduce,PCA(n_components=15),'M1_rates','M1_pca')
+    .pipe(pyaldata.dim_reduce,PCA(n_components=15),'PMd_rates','PMd_pca')
+    .pipe(pyaldata.dim_reduce,PCA(n_components=15),'MC_rates','MC_pca')
     .assign(
         **{
             'idx_ctHoldTime': lambda x: x['idx_ctHoldTime'].map(lambda y: y[-1] if y.size>1 else y),
