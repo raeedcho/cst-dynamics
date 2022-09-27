@@ -35,6 +35,11 @@ def extract_td_epochs(td):
             rel_start_time=0,
             rel_end_time=0.3,
         ),
+        'move_late': util.generate_realtime_epoch_fun(
+            'idx_goCueTime',
+            rel_start_time=1,
+            rel_end_time=1.3,
+        ),
     }
 
     td_binned = (
