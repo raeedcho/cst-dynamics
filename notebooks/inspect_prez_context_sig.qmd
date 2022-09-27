@@ -1,5 +1,5 @@
 ---
-title: Prez context signal analysis
+title: Prez context signal inspection
 subtitle: Taking a look at newly collected CST data
 format:
   html:
@@ -9,8 +9,24 @@ format:
     code-fold: true
     execute: true
     self-contained: true
+    freeze: true
 jupyter: python3
 ---
+
+:::{.callout-important}
+This document has been frozen in place. The git hash at time of freezing was:
+
+```{python}
+#| label: hash
+#| echo: false
+import git
+
+repo = git.Repo(search_parent_directories=True)
+short_hash = repo.head.object.hexsha[:10]
+
+print(f'Current repo hash: {short_hash}')
+```
+:::
 
 # Why we needed more data
 
@@ -610,10 +626,3 @@ ang_ax.set_ylabel('Time bin')
 Seems like there's two main blocks of separability: one transient during the cued hold, and one tonic through the movement period. It also looks like the LDA axes during the cued hold period are pretty much orthogonal to the ones during the thick of movement. Possibly the post-go cue axes are somewhere in between.
 
 At this point, this document is getting a bit unwieldy. I'm going to freeze it here and move some of this stuff over to a new document focusing on these separability metrics. For the purposes of reproducability, here's the git hash of the commit I was on the last time this document was rendered:
-
-```{python}
-import git
-
-repo = git.Repo(search_parent_directories=True)
-short_hash = repo.head.object.hexsha[:10]
-```
