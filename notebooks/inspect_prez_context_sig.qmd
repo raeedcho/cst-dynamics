@@ -14,18 +14,7 @@ jupyter: python3
 ---
 
 :::{.callout-important}
-This document has been frozen in place. The git hash at time of freezing was:
-
-```{python}
-#| label: hash
-#| echo: false
-import git
-
-repo = git.Repo(search_parent_directories=True)
-short_hash = repo.head.object.hexsha[:10]
-
-print(f'Current repo hash: {short_hash}')
-```
+This document has been frozen in place. The git hash at time of freezing was: 324f678
 :::
 
 # Why we needed more data
