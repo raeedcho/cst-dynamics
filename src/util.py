@@ -1,5 +1,12 @@
 import pyaldata
 import pandas as pd
+import numpy as np
+
+def angle_between(v1,v2):
+    '''
+    Calculate the angle between vectors
+    '''
+    return (180/np.pi)*np.arccos(np.dot(v1,v2)/(np.linalg.norm(v1) * np.linalg.norm(v2)))
 
 @pyaldata.copy_td
 def split_trials_by_epoch(trial_data,epoch_dict,epoch_col_name='epoch'):
