@@ -1,0 +1,125 @@
+---
+title: Prez context signal analysis
+subtitle: Taking a look at newly collected CST data
+format:
+  html:
+    toc: true
+    toc-location: left
+    cap-location: margin
+    code-fold: true
+    execute: true
+    self-contained: false
+jupyter: python3
+
+---
+```{python}
+import src
+import pyaldata
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+import k3d
+import yaml
+from sklearn.decomposition import PCA
+from ipywidgets import interact
+
+sns.set_context('paper')
+
+%load_ext autoreload
+%autoreload 2
+```
+
+```{python}
+with open('../params.yaml','r') as f:
+    params = yaml.safe_load(f)
+    inspection_params = params['inspection']
+
+td = (
+    pyaldata.mat2dataframe(
+        '../data/trial_data/Prez_20220720_RTTCSTCO_TD.mat',
+        shift_idx_fields=True,
+        td_name='trial_data'
+    )
+    .assign(
+        date_time=lambda x: pd.to_datetime(x['date_time']),
+        session_date=lambda x: pd.DatetimeIndex(x['date_time']).normalize()
+    )
+    .query('task=="RTT" | task=="CST"')
+    .pipe(src.data.remove_aborts, verbose=inspection_params['verbose'])
+    .pipe(src.data.remove_artifact_trials, verbose=inspection_params['verbose'])
+    .pipe(
+        src.data.filter_unit_guides,
+        filter_func=lambda guide: guide[:,1] > (0 if inspection_params['keep_unsorted'] else 1)
+    )
+    .pipe(src.data.remove_correlated_units)
+    .pipe(
+        src.data.remove_all_low_firing_neurons,
+        threshold=0.1,
+        divide_by_bin_size=True,
+        verbose=inspection_params['verbose']
+    )
+    .pipe(pyaldata.add_firing_rates,method='smooth', std=0.05, backend='convolve')
+    .pipe(src.data.trim_nans, ref_signals=['rel_hand_pos'])
+    .pipe(src.data.fill_kinematic_signals)
+    .pipe(src.data.rebin_data,new_bin_size=inspection_params['bin_size'])
+    .pipe(pyaldata.soft_normalize_signal,signals=['M1_rates','PMd_rates','MC_rates'])
+    .pipe(pyaldata.dim_reduce,PCA(n_components=15),'M1_rates','M1_pca')
+    .pipe(pyaldata.dim_reduce,PCA(n_components=15),'PMd_rates','PMd_pca')
+    .pipe(pyaldata.dim_reduce,PCA(n_components=15),'MC_rates','MC_pca')
+    .assign(
+        **{
+            'idx_ctHoldTime': lambda x: x['idx_ctHoldTime'].map(lambda y: y[-1] if y.size>1 else y),
+            'Ambiguous Hold Period': lambda x: x['bin_size']*(x['idx_pretaskHoldTime'] - x['idx_ctHoldTime']),
+            'Cued Hold Period': lambda x: x['bin_size']*(x['idx_goCueTime'] - x['idx_pretaskHoldTime']),
+            'Movement Period': lambda x: x['bin_size']*(x['idx_endTime'] - x['idx_goCueTime']),
+        }
+    )
+)
+```
+
+## Using dPCA to look at multiple dimensions together
+
+Because there seem to be multiple dimensions that separate tasks, maybe dPCA would be a useful technique to use here. With dPCA, we can do dimensionality reduction and finding the separating dimensions simultaneously, ensuring those separating dimensions are orthogonal.
+
+```{python}
+from dPCA.dPCA import dPCA
+from src import dpca_wrap
+
+# Compose the neural data tensor
+# This is a 4D tensor with dimensions (num_trials, num_neurons, num_tasks, num_time_bins)
+array = 'MC'
+td_epoch = src.context_analysis.extract_td_epochs(td)
+td_dpca = (
+    td_epoch.copy()
+    .loc[td_epoch['epoch']=='full_trim',:]
+)
+neural_tensor = dpca_wrap.form_neural_tensor(td_dpca,f'{array}_rates',cond_cols='task')
+
+# set up and fit dpca
+dpca = dPCA(labels='st',join={'s':['s','st']},regularizer='auto')
+dpca.protect = ['t']
+latent_dict = dpca.fit_transform(np.mean(neural_tensor,axis=0),trialX=neural_tensor)
+
+@pyaldata.copy_td
+def add_dpca_projections(td,dpca):
+    for key,cond in {'t':'time','s':'target'}.items():
+        td[f'{array}_dpca_'+cond] = [dpca.transform(rates.T,marginalization=key).T for rates in td[f'{array}_rates']]
+
+    return td
+
+# add dPCA projections to trial data
+td_dpca = add_dpca_projections(td_dpca,dpca)
+td_proj = add_dpca_projections(td_epoch,dpca)
+
+# temp plotting
+dpca_wrap.plot_dpca(td_dpca,latent_dict)
+dpca_wrap.plot_dpca_projection(td_proj.query('epoch=="full_trim"'),array),
+dpca_wrap.plot_dpca_projection(td_proj.query('epoch=="hold_move"'),array)
+dpca_wrap.plot_dpca_projection(td_proj.query('epoch=="hold_move_ref_cue"'),array)
+```
+
+Well...that's not what I expected. There does seem to be some dimensions separating neural activity between tasks, but I think maybe something about dPCA trying to also explain variability might be making things difficult. Maybe if we take a look at signal variance across trials over time, that might reveal something?
+
+```{python}
+```
