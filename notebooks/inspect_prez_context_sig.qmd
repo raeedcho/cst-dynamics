@@ -226,12 +226,7 @@ Because the trials have randomized lengths, we'll have to reference these neural
 ```{python}
 # this function extracts epochs from the dataframe and and returns a dataframe with the epochs
 # labeled for fitting models and predicting trial type
-# Note:The epoch extraction in the code below requires a bit of a kludge to rename the variables,
-# but it's a simple way to get the data into the right format for the analysis with the current state of the code.
-# TODO: fix the backend code to specify which array we want
-td_epoch = src.context_analysis.extract_td_epochs(
-    td.rename(columns={'M1_rates':'M1_orig_rates','MC_rates':'M1_rates'})
-)
+td_epoch = src.context_analysis.extract_td_epochs(td)
 ```
 
 ## Context in the ambiguous hold period
