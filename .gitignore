@@ -2,3 +2,5 @@
 src/__pycache__
 /.quarto/
 reports/
+_freeze/
+
