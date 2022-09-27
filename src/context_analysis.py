@@ -8,7 +8,7 @@ from . import subspace_tools,data,util
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
 from sklearn.decomposition import PCA
 from sklearn.pipeline import Pipeline
-from sklearn.model_selection import cross_val_score
+from sklearn.model_selection import cross_val_score,GroupShuffleSplit
 
 def extract_td_epochs(td):
     '''
@@ -41,7 +41,6 @@ def extract_td_epochs(td):
         td.copy()
         .pipe(util.split_trials_by_epoch,binned_epoch_dict)
         .pipe(data.rebin_data,new_bin_size=0.3)
-        .pipe(pyaldata.add_firing_rates,method='bin')
     )
 
     spike_fields = [name for name in td.columns.values if name.endswith("_spikes")]
@@ -59,13 +58,16 @@ def extract_td_epochs(td):
             rel_start_time=-0.3,
             rel_end_time=1.0,
         ),
+        'full_trim': util.generate_realtime_epoch_fun(
+            'idx_goCueTime',
+            rel_start_time=-0.8,
+            rel_end_time=5,
+        ),
         'full': lambda trial : slice(0,trial['hand_pos'].shape[0]),
     }
     td_smooth = (
         td.copy()
-        .pipe(pyaldata.add_firing_rates,method='smooth',std=0.05,backend='convolve')
         .pipe(util.split_trials_by_epoch,smooth_epoch_dict)
-        .pipe(data.rebin_data,new_bin_size=0.05)
     )
 
     td_epochs = pd.concat([td_binned,td_smooth]).reset_index()
@@ -226,6 +228,68 @@ def plot_any_dim_separability(td,signal='M1_pca',ref_time_col='Time from go cue 
     sns.despine(ax=ax,trim=True)
 
     return ax
+
+def get_train_test_separability(td,signal='M1_pca',ref_time_col='Time from go cue (s)',time_lims=[-0.8,5],ax=None):
+    '''
+    Get the separability traces of neural activity based on task, where each trace is the separability
+    over the whole trial along a single dimension found using a given timepoint.
+
+    Args:
+        td (DataFrame): PyalData formatted structure of neural/behavioral data
+        signal (str): name of signal column to work on (default: 'M1_pca')
+        ref_time_col (str): name of column to reference time by (used for aggregation)
+            Options are either "Time from go cue (s)" or "Time from pretask hold (s)"
+        time_lims (list): limits of time axis (default: [-0.8,5])
+        ax (Axes): axes to plot on (default: None--creates new figure)
+
+    Returns:
+        (pd.Series): Series of separability trace indexed by training time and testing time
+        (pd.Series): Series of LDA axis coefficients indexed by training time
+    '''
+    # set up function to train at a given time in training set and predict for all times in training set
+    
+    sep_df_ref = (
+        td.copy()
+        .pipe(data.add_trial_time,ref_event='idx_goCueTime',column_name='Time from go cue (s)')
+        .pipe(data.add_trial_time,ref_event='idx_pretaskHoldTime',column_name='Time from pretask hold (s)')
+        .loc[:,['trial_id','task','epoch','Time from go cue (s)','Time from pretask hold (s)',signal]]
+        .explode(['Time from go cue (s)','Time from pretask hold (s)',signal])
+        .loc[lambda x: (x[ref_time_col]>=time_lims[0]) & (x[ref_time_col]<=time_lims[1]),:]
+        .assign(trialtime_hash=lambda x: pd.to_timedelta(x[ref_time_col],'s'))
+    )
+    train_test_index = pd.MultiIndex.from_product(
+        [sep_df_ref['trialtime_hash'].unique(),sep_df_ref['trialtime_hash'].unique()],
+        names=['train_time','test_time'],
+    )
+
+    gss = GroupShuffleSplit(n_splits=1,test_size=0.25)
+    for train_idx,test_idx in gss.split(sep_df_ref,groups=sep_df_ref['trial_id']):
+        df_train = sep_df_ref.iloc[train_idx]
+        df_test = sep_df_ref.iloc[test_idx]
+        
+        train_times = []
+        test_seps = []
+        train_lda_coefs = []
+        for train_time,train_rows in df_train.groupby('trialtime_hash'):
+            lda_model = LinearDiscriminantAnalysis()
+            lda_model.fit(np.row_stack(train_rows[signal]),train_rows['task'])
+            train_lda_coefs.append(lda_model.coef_.squeeze())
+
+            train_times.append(train_time)
+            test_seps.append(
+                df_test
+                .groupby('trialtime_hash')
+                .apply(lambda x: lda_model.score(
+                        np.row_stack(x[signal]),
+                        x['task'],
+                    ),
+                )
+            )
+
+        sep_series = pd.concat(test_seps,keys=train_times,names=['train_time','test_time']).rename('Separability')
+        lda_coefs = pd.Series(train_lda_coefs,index=train_times)
+
+    return sep_series,lda_coefs
 
 def plot_hold_pca(td,array_name='M1',label_col='task',hue_order=['CO','CST']):
     '''
