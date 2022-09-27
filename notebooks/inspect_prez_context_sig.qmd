@@ -130,14 +130,31 @@ axs[-1].set_xlabel('Time (s)')
 Let's double-check the timing of each trial, just to make sure the task is happening the way we think it is.
 
 ```{python}
-g = sns.pairplot(
+#| label: task_timing
+#| layout: [[1,1]]
+#| cap-location: bottom
+#| fig-cap:
+#|  - "Ambiguous and cued hold period timing in each task"
+#|  - "Movement period timing in each task"
+ 
+sns.set_context('talk')
+g = sns.JointGrid(
     data=td.query('task=="CST" | task=="RTT"'),
-    vars=['Ambiguous Hold Period','Cued Hold Period','Movement Period'],
+    x='Ambiguous Hold Period',
+    y='Cued Hold Period',
     hue='task',
-    diag_kind='hist',
-    corner=True,
-    height=1.5,
 )
+g.plot(sns.scatterplot,sns.histplot)
+
+fig,ax = plt.subplots(1,1)
+sns.histplot(
+    data=td.query('task=="CST" | task=="RTT"'),
+    x='Movement Period',
+    hue='task',
+)
+sns.despine(fig=fig,trim=True)
+sns.set_context('paper')
+
 ```
 
 The ambiguous and cued hold periods are about the same length for each trial type, and the movement period is slightly shorter for RTT trials than for CST trials, but the trial length disparity is much reduced from that of CO-CST datasets. Perhaps with future data collection, we can increase the number of random targets to more closely match the timing, or we can just have the monkey reaching for random targets until a timer runs out.
