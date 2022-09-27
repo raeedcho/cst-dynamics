@@ -243,6 +243,8 @@ First, let's take a look at separability in the neural data between CST and RTT 
 #|   - "Ambiguous Hold Period LDA dynamics (go cue ref)"
 #|   - "Ambiguous Hold Period LDA dynamics (trial-type cue ref)"
 #|   - "Ambiguous Hold Period LDA dynamics (full trial)"
+#|   - "Separability dynamics according to ambiguous hold **neural** LDA model, aligned by pre-task hold and go cue"
+#|   - "Separability dynamics according to ambiguous hold **behavioral** LDA model, aligned by pre-task hold and go cue"
 
 td_train,td_test_ambig_hold,ambig_hold_lda = src.context_analysis.apply_models(
     td_epoch,
@@ -256,10 +258,20 @@ fig_gen_dict = {
     'task_beh':src.context_analysis.plot_hold_behavior(td_train,hue_order=['RTT','CST']),
     'task_beh_lda':src.context_analysis.plot_beh_lda(td_train,hue_order=['RTT','CST']),
     # LDA traces
-    'task_lda_trace':src.context_analysis.plot_M1_lda_traces(td_test.query('epoch=="hold_move"'),ref_event='idx_goCueTime',label_colors={'RTT':'r','CST':'b'}),
-    'task_lda_trace_pretask':src.context_analysis.plot_M1_lda_traces(td_test.query('epoch=="hold_move_ref_cue"'),ref_event='idx_pretaskHoldTime',label_colors={'RTT':'r','CST':'b'}),
-    'task_lda_trace':src.context_analysis.plot_M1_lda_traces(td_test.query('epoch=="full"'),ref_event='idx_goCueTime',label_colors={'RTT':'r','CST':'b'}),
+    'task_lda_trace':src.context_analysis.plot_M1_lda_traces(td_test_ambig_hold.query('epoch=="hold_move"'),ref_event='idx_goCueTime',label_colors={'RTT':'r','CST':'b'}),
+    'task_lda_trace_pretask':src.context_analysis.plot_M1_lda_traces(td_test_ambig_hold.query('epoch=="hold_move_ref_cue"'),ref_event='idx_pretaskHoldTime',label_colors={'RTT':'r','CST':'b'}),
+    'task_lda_trace':src.context_analysis.plot_M1_lda_traces(td_test_ambig_hold.query('epoch=="full"'),ref_event='idx_goCueTime',label_colors={'RTT':'r','CST':'b'}),
 }
+
+fig,axs = plt.subplots(1,2,figsize=(6,2), sharey=True, gridspec_kw={'width_ratios':[1,4]})
+src.context_analysis.plot_separability_dynamics(td_test_ambig_hold,'Time from pretask hold (s)',ax=axs[0],time_lims=[-0.5,1],pred_name='M1_pred')
+src.context_analysis.plot_separability_dynamics(td_test_ambig_hold,'Time from go cue (s)',ax=axs[1],time_lims=[-1,5],pred_name='M1_pred')
+sns.despine(ax=axs[1],left=True)
+
+fig,axs = plt.subplots(1,2,figsize=(6,2), sharey=True, gridspec_kw={'width_ratios':[1,4]})
+src.context_analysis.plot_separability_dynamics(td_test_ambig_hold,'Time from pretask hold (s)',ax=axs[0],time_lims=[-0.5,1],pred_name='beh_pred')
+src.context_analysis.plot_separability_dynamics(td_test_ambig_hold,'Time from go cue (s)',ax=axs[1],time_lims=[-1,5],pred_name='beh_pred')
+sns.despine(ax=axs[1],left=True)
 ```
 
 Overall, this shows a few things:
@@ -282,6 +294,8 @@ Now we can take a look at contextual separation in the cued hold period, where t
 #|   - "Pre-task Hold Period LDA dynamics (go cue ref)"
 #|   - "Pre-task Hold Period LDA dynamics (trial-type cue ref)"
 #|   - "Pre-task Hold Period LDA dynamics (full trial)"
+#|   - "Separability dynamics according to cued hold **neural** LDA model, aligned by pre-task hold and go cue"
+#|   - "Separability dynamics according to cued hold **behavioral** LDA model, aligned by pre-task hold and go cue"
  
 td_train,td_test_cued_hold,cued_hold_lda = src.context_analysis.apply_models(
     td_epoch,
@@ -295,10 +309,21 @@ fig_gen_dict = {
     'task_beh':src.context_analysis.plot_hold_behavior(td_train,hue_order=['RTT','CST']),
     'task_beh_lda':src.context_analysis.plot_beh_lda(td_train,hue_order=['RTT','CST']),
     # LDA traces
-    'task_lda_trace':src.context_analysis.plot_M1_lda_traces(td_test.query('epoch=="hold_move"'),ref_event='idx_goCueTime',label_colors={'RTT':'r','CST':'b'}),
-    'task_lda_trace_pretask':src.context_analysis.plot_M1_lda_traces(td_test.query('epoch=="hold_move_ref_cue"'),ref_event='idx_pretaskHoldTime',label_colors={'RTT':'r','CST':'b'}),
-    'task_lda_trace':src.context_analysis.plot_M1_lda_traces(td_test.query('epoch=="full"'),ref_event='idx_goCueTime',label_colors={'RTT':'r','CST':'b'}),
+    'task_lda_trace':src.context_analysis.plot_M1_lda_traces(td_test_cued_hold.query('epoch=="hold_move"'),ref_event='idx_goCueTime',label_colors={'RTT':'r','CST':'b'}),
+    'task_lda_trace_pretask':src.context_analysis.plot_M1_lda_traces(td_test_cued_hold.query('epoch=="hold_move_ref_cue"'),ref_event='idx_pretaskHoldTime',label_colors={'RTT':'r','CST':'b'}),
+    'task_lda_trace':src.context_analysis.plot_M1_lda_traces(td_test_cued_hold.query('epoch=="full"'),ref_event='idx_goCueTime',label_colors={'RTT':'r','CST':'b'}),
 }
+
+fig,axs = plt.subplots(1,2,figsize=(6,2), sharey=True, gridspec_kw={'width_ratios':[1,4]})
+src.context_analysis.plot_separability_dynamics(td_test_cued_hold,'Time from pretask hold (s)',ax=axs[0],time_lims=[-0.5,1],pred_name='M1_pred')
+src.context_analysis.plot_separability_dynamics(td_test_cued_hold,'Time from go cue (s)',ax=axs[1],time_lims=[-1,5],pred_name='M1_pred')
+sns.despine(ax=axs[1],left=True)
+
+fig,axs = plt.subplots(1,2,figsize=(6,2), sharey=True, gridspec_kw={'width_ratios':[1,4]})
+src.context_analysis.plot_separability_dynamics(td_test_cued_hold,'Time from pretask hold (s)',ax=axs[0],time_lims=[-0.5,1],pred_name='beh_pred')
+src.context_analysis.plot_separability_dynamics(td_test_cued_hold,'Time from go cue (s)',ax=axs[1],time_lims=[-1,5],pred_name='beh_pred')
+sns.despine(ax=axs[1],left=True)
+
 ```
 
 Again, there are a few things to note from these figures:
@@ -321,6 +346,8 @@ Lastly, for completeness, we run these same analyses on the 300 ms just after th
 #|   - "Movement Period LDA dynamics (go cue ref)"
 #|   - "Movement Period LDA dynamics (trial-type cue ref)"
 #|   - "Movement Period LDA dynamics (full trial)"
+#|   - "Separability dynamics according to post-go-cue **neural** LDA model, aligned by pre-task hold and go cue"
+#|   - "Separability dynamics according to post-go-cue **behavioral** LDA model, aligned by pre-task hold and go cue"
  
 td_train,td_test_move,move_lda = src.context_analysis.apply_models(
     td_epoch,
@@ -337,9 +364,9 @@ fig_gen_dict = {
     # 'task_M1_potent_lda': src.plot_M1_potent_lda(td_train,hue_order=['RTT','CST']),
     # 'task_M1_null_lda': src.plot_M1_null_lda(td_train,hue_order=['RTT','CST']),
     # LDA traces
-    'task_lda_trace':src.context_analysis.plot_M1_lda_traces(td_test.query('epoch=="hold_move"'),ref_event='idx_goCueTime',label_colors={'RTT':'r','CST':'b'}),
-    'task_lda_trace_pretask':src.context_analysis.plot_M1_lda_traces(td_test.query('epoch=="hold_move_ref_cue"'),ref_event='idx_pretaskHoldTime',label_colors={'RTT':'r','CST':'b'}),
-    'task_lda_trace':src.context_analysis.plot_M1_lda_traces(td_test.query('epoch=="full"'),ref_event='idx_goCueTime',label_colors={'RTT':'r','CST':'b'}),
+    'task_lda_trace':src.context_analysis.plot_M1_lda_traces(td_test_move.query('epoch=="hold_move"'),ref_event='idx_goCueTime',label_colors={'RTT':'r','CST':'b'}),
+    'task_lda_trace_pretask':src.context_analysis.plot_M1_lda_traces(td_test_move.query('epoch=="hold_move_ref_cue"'),ref_event='idx_pretaskHoldTime',label_colors={'RTT':'r','CST':'b'}),
+    'task_lda_trace':src.context_analysis.plot_M1_lda_traces(td_test_move.query('epoch=="full"'),ref_event='idx_goCueTime',label_colors={'RTT':'r','CST':'b'}),
 }
 ```
 
@@ -366,74 +393,69 @@ td_train,td_test = src.context_analysis.apply_models(
 )
 
 fig,axs = plt.subplots(1,2,figsize=(6,2), sharey=True, gridspec_kw={'width_ratios':[1,4]})
-src.context_analysis.plot_separability_dynamics(td_test,'Time from pretask hold (s)',ax=axs[0],time_lims=[-0.5,1],pred_name='M1_pred')
-src.context_analysis.plot_separability_dynamics(td_test,'Time from go cue (s)',ax=axs[1],time_lims=[-1,5],pred_name='M1_pred')
+src.context_analysis.plot_separability_dynamics(td_test_move,'Time from pretask hold (s)',ax=axs[0],time_lims=[-0.5,1],pred_name='M1_pred')
+src.context_analysis.plot_separability_dynamics(td_test_move,'Time from go cue (s)',ax=axs[1],time_lims=[-1,5],pred_name='M1_pred')
 sns.despine(ax=axs[1],left=True)
 
 fig,axs = plt.subplots(1,2,figsize=(6,2), sharey=True, gridspec_kw={'width_ratios':[1,4]})
-src.context_analysis.plot_separability_dynamics(td_test,'Time from pretask hold (s)',ax=axs[0],time_lims=[-0.5,1],pred_name='beh_pred')
-src.context_analysis.plot_separability_dynamics(td_test,'Time from go cue (s)',ax=axs[1],time_lims=[-1,5],pred_name='beh_pred')
+src.context_analysis.plot_separability_dynamics(td_test_move,'Time from pretask hold (s)',ax=axs[0],time_lims=[-0.5,1],pred_name='beh_pred')
+src.context_analysis.plot_separability_dynamics(td_test_move,'Time from go cue (s)',ax=axs[1],time_lims=[-1,5],pred_name='beh_pred')
 sns.despine(ax=axs[1],left=True)
 ```
 
-As expected, not much separability through the whole trial.
+Overall, these plots look fairly similar to the previous (pre-task hold period) figures. The behavior in this epoch still seems similarly distributed between the two tasks, which suggests that the monkey hasn't quite started moving in earnest yet. Also, the neural activity is still pretty separable in this epoch (0.79, compared to behavior's 0.59). However, one striking difference between these figures and the previous set is in the dynamics. Neural activity still separates around 300 ms after the pre-task cued hold period begins, but this separation appears to continue far beyond the go cue into the rest of the trial. Notably, this LDA model was trained with only the first 300 ms after the go cue, and there wasn't much movement during this period yet.
 
-Now we'll do the same for the cued hold epoch.
-
-```{python}
-#| label: separability_dynamics_cued_hold
-#| fig-cap:
-#|   - "Separability dynamics according to cued hold **neural** LDA model, aligned by pre-task hold and go cue"
-#|   - "Separability dynamics according to cued hold **behavioral** LDA model, aligned by pre-task hold and go cue"
-#| 
-td_train,td_test = src.context_analysis.apply_models(
-    td_epoch,
-    train_epochs=['hold'],
-    test_epochs=['full'],
-)
-
-fig,axs = plt.subplots(1,2,figsize=(6,2), sharey=True, gridspec_kw={'width_ratios':[1,4]})
-src.context_analysis.plot_separability_dynamics(td_test,'Time from pretask hold (s)',ax=axs[0],time_lims=[-0.5,1],pred_name='M1_pred')
-src.context_analysis.plot_separability_dynamics(td_test,'Time from go cue (s)',ax=axs[1],time_lims=[-1,5],pred_name='M1_pred')
-sns.despine(ax=axs[1],left=True)
-
-fig,axs = plt.subplots(1,2,figsize=(6,2), sharey=True, gridspec_kw={'width_ratios':[1,4]})
-src.context_analysis.plot_separability_dynamics(td_test,'Time from pretask hold (s)',ax=axs[0],time_lims=[-0.5,1],pred_name='beh_pred')
-src.context_analysis.plot_separability_dynamics(td_test,'Time from go cue (s)',ax=axs[1],time_lims=[-1,5],pred_name='beh_pred')
-sns.despine(ax=axs[1],left=True)
-```
-
-Here, we see that the separability is high through the pre-task hold period, but then drops after the go cue.
-
-Finally, we'll do the same for the post-go-cue epoch.
-
-```{python}
-#| label: separability_dynamics_go
-#| fig-cap: "Separability dynamics according to post-go-cue LDA model, aligned by pre-task hold and go cue"
-#| fig-cap:
-#|   - "Separability dynamics according to post-go-cue **neural** LDA model, aligned by pre-task hold and go cue"
-#|   - "Separability dynamics according to post-go-cue **behavioral** LDA model, aligned by pre-task hold and go cue"
-#| 
-td_train,td_test = src.context_analysis.apply_models(
-    td_epoch,
-    train_epochs=['move'],
-    test_epochs=['full'],
-)
-
-fig,axs = plt.subplots(1,2,figsize=(6,2), sharey=True, gridspec_kw={'width_ratios':[1,4]})
-src.context_analysis.plot_separability_dynamics(td_test,'Time from pretask hold (s)',ax=axs[0],time_lims=[-0.5,1],pred_name='M1_pred')
-src.context_analysis.plot_separability_dynamics(td_test,'Time from go cue (s)',ax=axs[1],time_lims=[-1,5],pred_name='M1_pred')
-sns.despine(ax=axs[1],left=True)
-
-fig,axs = plt.subplots(1,2,figsize=(6,2), sharey=True, gridspec_kw={'width_ratios':[1,4]})
-src.context_analysis.plot_separability_dynamics(td_test,'Time from pretask hold (s)',ax=axs[0],time_lims=[-0.5,1],pred_name='beh_pred')
-src.context_analysis.plot_separability_dynamics(td_test,'Time from go cue (s)',ax=axs[1],time_lims=[-1,5],pred_name='beh_pred')
-sns.despine(ax=axs[1],left=True)
-```
-
-Here, we see high separability that starts in the pre-task hold period and stays high until the end of the trial. Notably, this LDA model was trained with only the first 300 ms after the go cue, and there wasn't much movement during this period yet.
+This suggests that there is more than one dimension of neural activity that separate the tasks, with at least one dimension that retains the separation through the entire trial and one (possibly overlapping dimension) in which the separability collapses once the monkey starts to move. This collapsing dimension is reminiscent of a preparatory dimension, while the full-trial separability dimension suggests that behavior occurs in separate regions of the neural state space.
 
 Importantly, the behavioral separability in all of these models remains not much higher than chance level, rising slightly and *briefly* during the periods in which the given LDA model is trained (though not for the ambiguous hold period model). This suggests that the separability in the neural activity is something beyond simply a behavioral difference between the two tasks.
+
+One more thing... Let's look at later movement time separability: 
+
+```{python}
+#| label: move_late_separability
+#| fig-cap: 
+#|   - "Late Movement Period Neural PC space"
+#|   - "Late Movement Period LDA projection through session"
+#|   - "Late Movement Period Behavior"
+#|   - "Late Movement Period LDA projection through session"
+#|   - "Late Movement Period LDA dynamics (go cue ref)"
+#|   - "Late Movement Period LDA dynamics (trial-type cue ref)"
+#|   - "Late Movement Period LDA dynamics (full trial)"
+#|   - "Separability dynamics according to late movement **neural** LDA model, aligned by pre-task hold and go cue"
+#|   - "Separability dynamics according to late movement **behavioral** LDA model, aligned by pre-task hold and go cue"
+ 
+td_train,td_test_move_late,move_late_lda = src.context_analysis.apply_models(
+    td_epoch,
+    train_epochs=['move_late'],
+    test_epochs=['hold_move','hold_move_ref_cue','full'],
+)
+
+fig_gen_dict = {
+    'task_M1_pca':src.context_analysis.plot_hold_pca(td_train,array_name='M1',hue_order=['RTT','CST']),
+    'task_M1_lda':src.context_analysis.plot_M1_lda(td_train,hue_order=['RTT','CST']),
+    'task_beh':src.context_analysis.plot_hold_behavior(td_train,hue_order=['RTT','CST']),
+    'task_beh_lda':src.context_analysis.plot_beh_lda(td_train,hue_order=['RTT','CST']),
+    # 'task_M1_potent': src.plot_M1_hold_potent(td_train,hue_order=['RTT','CST']),
+    # 'task_M1_potent_lda': src.plot_M1_potent_lda(td_train,hue_order=['RTT','CST']),
+    # 'task_M1_null_lda': src.plot_M1_null_lda(td_train,hue_order=['RTT','CST']),
+    # LDA traces
+    'task_lda_trace':src.context_analysis.plot_M1_lda_traces(td_test_move.query('epoch=="hold_move"'),ref_event='idx_goCueTime',label_colors={'RTT':'r','CST':'b'}),
+    'task_lda_trace_pretask':src.context_analysis.plot_M1_lda_traces(td_test_move.query('epoch=="hold_move_ref_cue"'),ref_event='idx_pretaskHoldTime',label_colors={'RTT':'r','CST':'b'}),
+    'task_lda_trace':src.context_analysis.plot_M1_lda_traces(td_test_move.query('epoch=="full"'),ref_event='idx_goCueTime',label_colors={'RTT':'r','CST':'b'}),
+}
+
+fig,axs = plt.subplots(1,2,figsize=(6,2), sharey=True, gridspec_kw={'width_ratios':[1,4]})
+src.context_analysis.plot_separability_dynamics(td_test_move,'Time from pretask hold (s)',ax=axs[0],time_lims=[-0.5,1],pred_name='M1_pred')
+src.context_analysis.plot_separability_dynamics(td_test_move,'Time from go cue (s)',ax=axs[1],time_lims=[-1,5],pred_name='M1_pred')
+sns.despine(ax=axs[1],left=True)
+
+fig,axs = plt.subplots(1,2,figsize=(6,2), sharey=True, gridspec_kw={'width_ratios':[1,4]})
+src.context_analysis.plot_separability_dynamics(td_test_move,'Time from pretask hold (s)',ax=axs[0],time_lims=[-0.5,1],pred_name='beh_pred')
+src.context_analysis.plot_separability_dynamics(td_test_move,'Time from go cue (s)',ax=axs[1],time_lims=[-1,5],pred_name='beh_pred')
+sns.despine(ax=axs[1],left=True)
+```
+
+Separability seems similar to the post-go cue separability here.
 
 ## Any-dimension separability dynamics
 
