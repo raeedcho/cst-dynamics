@@ -617,7 +617,7 @@ Seems like there's two main blocks of separability: one transient during the cue
 One way to check out how similar the LDA axes are is to run SVD on the matrix of LDA coefficients and plot out the singular values to look for an elbow. It might also be important to exclude LD axes that led to chance separation, but possibly a kludge would be to just take the axes from -0.3s to 5s from the go cue, omitting the times when the monkey didn't know which type of trial was coming up.
 
 ```{python}
-coefs = np.row_stack(M1_lda_coefs.loc[pd.Timedelta(-0.3,'s'):]).T
+coefs = np.row_stack(M1_lda_coefs.loc[pd.Timedelta(-0.3,'s'):pd.Timedelta(2,'s')]).T
 # coefs = np.row_stack(M1_lda_coefs).T
 coefs = coefs/np.linalg.norm(coefs,axis=0)
 
@@ -633,34 +633,38 @@ sns.lineplot(x=np.arange(S.shape[0]),y=S,ax=axs[2])
 td_full['M1_sep_space'] = [neural_sig @ U[:,:num_comps] for neural_sig in td_full['M1_pca']]
 
 task_colors={'RTT': 'r','CST': 'b'}
-td_full = src.data.add_trial_time(td_full,ref_event='idx_goCueTime')
-fig,axs = plt.subplots(num_comps,1)
-for _,trial in td_full.groupby('task').sample(n=50).iterrows():
+td_temp = (
+    td_full.copy()
+    .pipe(src.data.add_trial_time,ref_event='idx_goCueTime')
+    # .pipe(
+    #     pyaldata.restrict_to_interval,
+    #     epoch_fun=src.util.generate_realtime_epoch_fun(start_point_name='idx_goCueTime',rel_start_time=-1,rel_end_time=5),
+    # )
+)
+fig,axs = plt.subplots(num_comps,1,sharex=True,figsize=(12,8))
+for _,trial in td_temp.groupby('task').sample(n=50).iterrows():
     for compnum in range(num_comps):
         axs[compnum].plot(
             trial['trialtime'],
             trial['M1_sep_space'][:,compnum],
             color=task_colors[trial['task']],
             alpha=0.1,
+            lw=2,
         )
-        # axs[compnum].set_xlim([-1,1])
+        axs[compnum].set_xlim([-1,5])
+        axs[compnum].set_ylabel(f'Comp {compnum+1}')
+axs[-1].set_xlabel('Time from go cue (s)')
+axs[0].set_title('M1 separability space')
 
 fig,ax = plt.subplots(1,1)
-for _,trial in td_full.groupby('task').sample(n=50).iterrows():
+for _,trial in td_full.groupby('task').sample(n=10).iterrows():
     ax.plot(
         trial['M1_sep_space'][:,0],
-        trial['M1_sep_space'][:,2],
+        trial['M1_sep_space'][:,1],
         color=task_colors[trial['task']],
         alpha=0.1
     )
 
-
-# plot_data = (
-#     td_full.copy()
-#     .loc[:,['trial_id','task','trialtime','M1_sep_space']]
-#     .explode(['trialtime','M1_sep_space'])
-# )
-# sns.lineplot()
 ```
 
 At this point, this document is getting a bit unwieldy. I'm going to freeze it here and move some of this stuff over to a new document focusing on these separability metrics. For the purposes of reproducability, here's the git hash of the commit I was on the last time this document was rendered:
