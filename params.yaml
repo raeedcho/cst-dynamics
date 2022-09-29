@@ -11,3 +11,11 @@ inspection:
   bin_size: 0.010
   keep_unsorted: True
   verbose: True
+context_analysis:
+  bin_size: 0.010
+  keep_unsorted: True
+  verbose: True
+submovement_decomposition:
+  bin_size: 0.010
+  keep_unsorted: True
+  verbose: True
