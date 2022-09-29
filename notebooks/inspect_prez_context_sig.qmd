@@ -628,7 +628,7 @@ coefs_approx = U[:,:num_comps] @ np.diag(S)[:num_comps,:num_comps] @ Vh[:num_com
 fig,axs = plt.subplots(3,1)
 sns.heatmap(coefs,ax=axs[0])
 sns.heatmap(coefs_approx,ax=axs[1])
-sns.lineplot(x=np.arange(S.shape[0]),y=S,ax=axs[2])
+sns.lineplot(x=np.arange(S.shape[0])+1,y=S,ax=axs[2])
 
 td_full['M1_sep_space'] = [neural_sig @ U[:,:num_comps] for neural_sig in td_full['M1_pca']]
 
@@ -652,9 +652,11 @@ for _,trial in td_temp.groupby('task').sample(n=50).iterrows():
             lw=2,
         )
         axs[compnum].set_xlim([-1,5])
+        axs[compnum].set_ylim([-0.3,0.3])
         axs[compnum].set_ylabel(f'Comp {compnum+1}')
 axs[-1].set_xlabel('Time from go cue (s)')
 axs[0].set_title('M1 separability space')
+sns.despine(fig=fig,trim=True)
 
 fig,ax = plt.subplots(1,1)
 for _,trial in td_full.groupby('task').sample(n=10).iterrows():
