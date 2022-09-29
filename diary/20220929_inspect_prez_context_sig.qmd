@@ -1,6 +1,7 @@
 ---
 title: Prez context signal inspection
 subtitle: Taking a look at newly collected CST data
+date: 2022-09-29
 format:
   html:
     toc: true
@@ -8,14 +9,10 @@ format:
     cap-location: margin
     code-fold: true
     execute: true
-    self-contained: true
+    self-contained: false
     freeze: true
 jupyter: python3
 ---
-
-:::{.callout-important}
-This document has been frozen in place. The git hash at time of freezing was: 324f678
-:::
 
 # Why we needed more data
 
@@ -231,7 +228,7 @@ Because the trials have randomized lengths, we'll have to reference these neural
 ```{python}
 # this function extracts epochs from the dataframe and and returns a dataframe with the epochs
 # labeled for fitting models and predicting trial type
-td_epoch = src.context_analysis_deprecated.extract_td_epochs(td)
+td_epoch = src.cst_rtt_context_analysis.extract_td_epochs(td)
 ```
 
 ## Context in the ambiguous hold period
@@ -251,31 +248,31 @@ First, let's take a look at separability in the neural data between CST and RTT 
 #|   - "Separability dynamics according to ambiguous hold **neural** LDA model, aligned by pre-task hold and go cue"
 #|   - "Separability dynamics according to ambiguous hold **behavioral** LDA model, aligned by pre-task hold and go cue"
 
-td_train,td_test_ambig_hold,ambig_hold_lda = src.context_analysis_deprecated.apply_models(
+td_train,td_test_ambig_hold,ambig_hold_lda = src.cst_rtt_context_analysis.apply_models(
     td_epoch,
     train_epochs=['ambig_hold'],
     test_epochs=['hold_move','hold_move_ref_cue','full'],
 )
 
 fig_gen_dict = {
-    'task_M1_pca':src.context_analysis_deprecated.plot_hold_pca(td_train,array_name='M1',hue_order=['RTT','CST']),
-    'task_M1_lda':src.context_analysis_deprecated.plot_M1_lda(td_train,hue_order=['RTT','CST']),
-    'task_beh':src.context_analysis_deprecated.plot_hold_behavior(td_train,hue_order=['RTT','CST']),
-    'task_beh_lda':src.context_analysis_deprecated.plot_beh_lda(td_train,hue_order=['RTT','CST']),
+    'task_M1_pca':src.cst_rtt_context_analysis.plot_hold_pca(td_train,array_name='M1',hue_order=['RTT','CST']),
+    'task_M1_lda':src.cst_rtt_context_analysis.plot_M1_lda(td_train,hue_order=['RTT','CST']),
+    'task_beh':src.cst_rtt_context_analysis.plot_hold_behavior(td_train,hue_order=['RTT','CST']),
+    'task_beh_lda':src.cst_rtt_context_analysis.plot_beh_lda(td_train,hue_order=['RTT','CST']),
     # LDA traces
-    'task_lda_trace':src.context_analysis_deprecated.plot_M1_lda_traces(td_test_ambig_hold.query('epoch=="hold_move"'),ref_event='idx_goCueTime',label_colors={'RTT':'r','CST':'b'}),
-    'task_lda_trace_pretask':src.context_analysis_deprecated.plot_M1_lda_traces(td_test_ambig_hold.query('epoch=="hold_move_ref_cue"'),ref_event='idx_pretaskHoldTime',label_colors={'RTT':'r','CST':'b'}),
-    'task_lda_trace':src.context_analysis_deprecated.plot_M1_lda_traces(td_test_ambig_hold.query('epoch=="full"'),ref_event='idx_goCueTime',label_colors={'RTT':'r','CST':'b'}),
+    'task_lda_trace':src.cst_rtt_context_analysis.plot_M1_lda_traces(td_test_ambig_hold.query('epoch=="hold_move"'),ref_event='idx_goCueTime',label_colors={'RTT':'r','CST':'b'}),
+    'task_lda_trace_pretask':src.cst_rtt_context_analysis.plot_M1_lda_traces(td_test_ambig_hold.query('epoch=="hold_move_ref_cue"'),ref_event='idx_pretaskHoldTime',label_colors={'RTT':'r','CST':'b'}),
+    'task_lda_trace':src.cst_rtt_context_analysis.plot_M1_lda_traces(td_test_ambig_hold.query('epoch=="full"'),ref_event='idx_goCueTime',label_colors={'RTT':'r','CST':'b'}),
 }
 
 fig,axs = plt.subplots(1,2,figsize=(6,2), sharey=True, gridspec_kw={'width_ratios':[1,4]})
-src.context_analysis_deprecated.plot_separability_dynamics(td_test_ambig_hold,'Time from pretask hold (s)',ax=axs[0],time_lims=[-0.5,1],pred_name='M1_pred')
-src.context_analysis_deprecated.plot_separability_dynamics(td_test_ambig_hold,'Time from go cue (s)',ax=axs[1],time_lims=[-1,5],pred_name='M1_pred')
+src.cst_rtt_context_analysis.plot_separability_dynamics(td_test_ambig_hold,'Time from pretask hold (s)',ax=axs[0],time_lims=[-0.5,1],pred_name='M1_pred')
+src.cst_rtt_context_analysis.plot_separability_dynamics(td_test_ambig_hold,'Time from go cue (s)',ax=axs[1],time_lims=[-1,5],pred_name='M1_pred')
 sns.despine(ax=axs[1],left=True)
 
 fig,axs = plt.subplots(1,2,figsize=(6,2), sharey=True, gridspec_kw={'width_ratios':[1,4]})
-src.context_analysis_deprecated.plot_separability_dynamics(td_test_ambig_hold,'Time from pretask hold (s)',ax=axs[0],time_lims=[-0.5,1],pred_name='beh_pred')
-src.context_analysis_deprecated.plot_separability_dynamics(td_test_ambig_hold,'Time from go cue (s)',ax=axs[1],time_lims=[-1,5],pred_name='beh_pred')
+src.cst_rtt_context_analysis.plot_separability_dynamics(td_test_ambig_hold,'Time from pretask hold (s)',ax=axs[0],time_lims=[-0.5,1],pred_name='beh_pred')
+src.cst_rtt_context_analysis.plot_separability_dynamics(td_test_ambig_hold,'Time from go cue (s)',ax=axs[1],time_lims=[-1,5],pred_name='beh_pred')
 sns.despine(ax=axs[1],left=True)
 ```
 
@@ -302,31 +299,31 @@ Now we can take a look at contextual separation in the cued hold period, where t
 #|   - "Separability dynamics according to cued hold **neural** LDA model, aligned by pre-task hold and go cue"
 #|   - "Separability dynamics according to cued hold **behavioral** LDA model, aligned by pre-task hold and go cue"
  
-td_train,td_test_cued_hold,cued_hold_lda = src.context_analysis_deprecated.apply_models(
+td_train,td_test_cued_hold,cued_hold_lda = src.cst_rtt_context_analysis.apply_models(
     td_epoch,
     train_epochs=['hold'],
     test_epochs=['hold_move','hold_move_ref_cue','full'],
 )
 
 fig_gen_dict = {
-    'task_M1_pca':src.context_analysis_deprecated.plot_hold_pca(td_train,array_name='M1',hue_order=['RTT','CST']),
-    'task_M1_lda':src.context_analysis_deprecated.plot_M1_lda(td_train,hue_order=['RTT','CST']),
-    'task_beh':src.context_analysis_deprecated.plot_hold_behavior(td_train,hue_order=['RTT','CST']),
-    'task_beh_lda':src.context_analysis_deprecated.plot_beh_lda(td_train,hue_order=['RTT','CST']),
+    'task_M1_pca':src.cst_rtt_context_analysis.plot_hold_pca(td_train,array_name='M1',hue_order=['RTT','CST']),
+    'task_M1_lda':src.cst_rtt_context_analysis.plot_M1_lda(td_train,hue_order=['RTT','CST']),
+    'task_beh':src.cst_rtt_context_analysis.plot_hold_behavior(td_train,hue_order=['RTT','CST']),
+    'task_beh_lda':src.cst_rtt_context_analysis.plot_beh_lda(td_train,hue_order=['RTT','CST']),
     # LDA traces
-    'task_lda_trace':src.context_analysis_deprecated.plot_M1_lda_traces(td_test_cued_hold.query('epoch=="hold_move"'),ref_event='idx_goCueTime',label_colors={'RTT':'r','CST':'b'}),
-    'task_lda_trace_pretask':src.context_analysis_deprecated.plot_M1_lda_traces(td_test_cued_hold.query('epoch=="hold_move_ref_cue"'),ref_event='idx_pretaskHoldTime',label_colors={'RTT':'r','CST':'b'}),
-    'task_lda_trace':src.context_analysis_deprecated.plot_M1_lda_traces(td_test_cued_hold.query('epoch=="full"'),ref_event='idx_goCueTime',label_colors={'RTT':'r','CST':'b'}),
+    'task_lda_trace':src.cst_rtt_context_analysis.plot_M1_lda_traces(td_test_cued_hold.query('epoch=="hold_move"'),ref_event='idx_goCueTime',label_colors={'RTT':'r','CST':'b'}),
+    'task_lda_trace_pretask':src.cst_rtt_context_analysis.plot_M1_lda_traces(td_test_cued_hold.query('epoch=="hold_move_ref_cue"'),ref_event='idx_pretaskHoldTime',label_colors={'RTT':'r','CST':'b'}),
+    'task_lda_trace':src.cst_rtt_context_analysis.plot_M1_lda_traces(td_test_cued_hold.query('epoch=="full"'),ref_event='idx_goCueTime',label_colors={'RTT':'r','CST':'b'}),
 }
 
 fig,axs = plt.subplots(1,2,figsize=(6,2), sharey=True, gridspec_kw={'width_ratios':[1,4]})
-src.context_analysis_deprecated.plot_separability_dynamics(td_test_cued_hold,'Time from pretask hold (s)',ax=axs[0],time_lims=[-0.5,1],pred_name='M1_pred')
-src.context_analysis_deprecated.plot_separability_dynamics(td_test_cued_hold,'Time from go cue (s)',ax=axs[1],time_lims=[-1,5],pred_name='M1_pred')
+src.cst_rtt_context_analysis.plot_separability_dynamics(td_test_cued_hold,'Time from pretask hold (s)',ax=axs[0],time_lims=[-0.5,1],pred_name='M1_pred')
+src.cst_rtt_context_analysis.plot_separability_dynamics(td_test_cued_hold,'Time from go cue (s)',ax=axs[1],time_lims=[-1,5],pred_name='M1_pred')
 sns.despine(ax=axs[1],left=True)
 
 fig,axs = plt.subplots(1,2,figsize=(6,2), sharey=True, gridspec_kw={'width_ratios':[1,4]})
-src.context_analysis_deprecated.plot_separability_dynamics(td_test_cued_hold,'Time from pretask hold (s)',ax=axs[0],time_lims=[-0.5,1],pred_name='beh_pred')
-src.context_analysis_deprecated.plot_separability_dynamics(td_test_cued_hold,'Time from go cue (s)',ax=axs[1],time_lims=[-1,5],pred_name='beh_pred')
+src.cst_rtt_context_analysis.plot_separability_dynamics(td_test_cued_hold,'Time from pretask hold (s)',ax=axs[0],time_lims=[-0.5,1],pred_name='beh_pred')
+src.cst_rtt_context_analysis.plot_separability_dynamics(td_test_cued_hold,'Time from go cue (s)',ax=axs[1],time_lims=[-1,5],pred_name='beh_pred')
 sns.despine(ax=axs[1],left=True)
 
 ```
@@ -354,34 +351,34 @@ Lastly, for completeness, we run these same analyses on the 300 ms just after th
 #|   - "Separability dynamics according to post-go-cue **neural** LDA model, aligned by pre-task hold and go cue"
 #|   - "Separability dynamics according to post-go-cue **behavioral** LDA model, aligned by pre-task hold and go cue"
  
-td_train,td_test_move,move_lda = src.context_analysis_deprecated.apply_models(
+td_train,td_test_move,move_lda = src.cst_rtt_context_analysis.apply_models(
     td_epoch,
     train_epochs=['move'],
     test_epochs=['hold_move','hold_move_ref_cue','full'],
 )
 
 fig_gen_dict = {
-    'task_M1_pca':src.context_analysis_deprecated.plot_hold_pca(td_train,array_name='M1',hue_order=['RTT','CST']),
-    'task_M1_lda':src.context_analysis_deprecated.plot_M1_lda(td_train,hue_order=['RTT','CST']),
-    'task_beh':src.context_analysis_deprecated.plot_hold_behavior(td_train,hue_order=['RTT','CST']),
-    'task_beh_lda':src.context_analysis_deprecated.plot_beh_lda(td_train,hue_order=['RTT','CST']),
+    'task_M1_pca':src.cst_rtt_context_analysis.plot_hold_pca(td_train,array_name='M1',hue_order=['RTT','CST']),
+    'task_M1_lda':src.cst_rtt_context_analysis.plot_M1_lda(td_train,hue_order=['RTT','CST']),
+    'task_beh':src.cst_rtt_context_analysis.plot_hold_behavior(td_train,hue_order=['RTT','CST']),
+    'task_beh_lda':src.cst_rtt_context_analysis.plot_beh_lda(td_train,hue_order=['RTT','CST']),
     # 'task_M1_potent': src.plot_M1_hold_potent(td_train,hue_order=['RTT','CST']),
     # 'task_M1_potent_lda': src.plot_M1_potent_lda(td_train,hue_order=['RTT','CST']),
     # 'task_M1_null_lda': src.plot_M1_null_lda(td_train,hue_order=['RTT','CST']),
     # LDA traces
-    'task_lda_trace':src.context_analysis_deprecated.plot_M1_lda_traces(td_test_move.query('epoch=="hold_move"'),ref_event='idx_goCueTime',label_colors={'RTT':'r','CST':'b'}),
-    'task_lda_trace_pretask':src.context_analysis_deprecated.plot_M1_lda_traces(td_test_move.query('epoch=="hold_move_ref_cue"'),ref_event='idx_pretaskHoldTime',label_colors={'RTT':'r','CST':'b'}),
-    'task_lda_trace':src.context_analysis_deprecated.plot_M1_lda_traces(td_test_move.query('epoch=="full"'),ref_event='idx_goCueTime',label_colors={'RTT':'r','CST':'b'}),
+    'task_lda_trace':src.cst_rtt_context_analysis.plot_M1_lda_traces(td_test_move.query('epoch=="hold_move"'),ref_event='idx_goCueTime',label_colors={'RTT':'r','CST':'b'}),
+    'task_lda_trace_pretask':src.cst_rtt_context_analysis.plot_M1_lda_traces(td_test_move.query('epoch=="hold_move_ref_cue"'),ref_event='idx_pretaskHoldTime',label_colors={'RTT':'r','CST':'b'}),
+    'task_lda_trace':src.cst_rtt_context_analysis.plot_M1_lda_traces(td_test_move.query('epoch=="full"'),ref_event='idx_goCueTime',label_colors={'RTT':'r','CST':'b'}),
 }
 
 fig,axs = plt.subplots(1,2,figsize=(6,2), sharey=True, gridspec_kw={'width_ratios':[1,4]})
-src.context_analysis_deprecated.plot_separability_dynamics(td_test_move,'Time from pretask hold (s)',ax=axs[0],time_lims=[-0.5,1],pred_name='M1_pred')
-src.context_analysis_deprecated.plot_separability_dynamics(td_test_move,'Time from go cue (s)',ax=axs[1],time_lims=[-1,5],pred_name='M1_pred')
+src.cst_rtt_context_analysis.plot_separability_dynamics(td_test_move,'Time from pretask hold (s)',ax=axs[0],time_lims=[-0.5,1],pred_name='M1_pred')
+src.cst_rtt_context_analysis.plot_separability_dynamics(td_test_move,'Time from go cue (s)',ax=axs[1],time_lims=[-1,5],pred_name='M1_pred')
 sns.despine(ax=axs[1],left=True)
 
 fig,axs = plt.subplots(1,2,figsize=(6,2), sharey=True, gridspec_kw={'width_ratios':[1,4]})
-src.context_analysis_deprecated.plot_separability_dynamics(td_test_move,'Time from pretask hold (s)',ax=axs[0],time_lims=[-0.5,1],pred_name='beh_pred')
-src.context_analysis_deprecated.plot_separability_dynamics(td_test_move,'Time from go cue (s)',ax=axs[1],time_lims=[-1,5],pred_name='beh_pred')
+src.cst_rtt_context_analysis.plot_separability_dynamics(td_test_move,'Time from pretask hold (s)',ax=axs[0],time_lims=[-0.5,1],pred_name='beh_pred')
+src.cst_rtt_context_analysis.plot_separability_dynamics(td_test_move,'Time from go cue (s)',ax=axs[1],time_lims=[-1,5],pred_name='beh_pred')
 sns.despine(ax=axs[1],left=True)
 ```
 
@@ -406,34 +403,34 @@ One more thing... Let's look at later movement time separability:
 #|   - "Separability dynamics according to late movement **neural** LDA model, aligned by pre-task hold and go cue"
 #|   - "Separability dynamics according to late movement **behavioral** LDA model, aligned by pre-task hold and go cue"
  
-td_train,td_test_move_late,move_late_lda = src.context_analysis_deprecated.apply_models(
+td_train,td_test_move_late,move_late_lda = src.cst_rtt_context_analysis.apply_models(
     td_epoch,
     train_epochs=['move_late'],
     test_epochs=['hold_move','hold_move_ref_cue','full'],
 )
 
 fig_gen_dict = {
-    'task_M1_pca':src.context_analysis_deprecated.plot_hold_pca(td_train,array_name='M1',hue_order=['RTT','CST']),
-    'task_M1_lda':src.context_analysis_deprecated.plot_M1_lda(td_train,hue_order=['RTT','CST']),
-    'task_beh':src.context_analysis_deprecated.plot_hold_behavior(td_train,hue_order=['RTT','CST']),
-    'task_beh_lda':src.context_analysis_deprecated.plot_beh_lda(td_train,hue_order=['RTT','CST']),
+    'task_M1_pca':src.cst_rtt_context_analysis.plot_hold_pca(td_train,array_name='M1',hue_order=['RTT','CST']),
+    'task_M1_lda':src.cst_rtt_context_analysis.plot_M1_lda(td_train,hue_order=['RTT','CST']),
+    'task_beh':src.cst_rtt_context_analysis.plot_hold_behavior(td_train,hue_order=['RTT','CST']),
+    'task_beh_lda':src.cst_rtt_context_analysis.plot_beh_lda(td_train,hue_order=['RTT','CST']),
     # 'task_M1_potent': src.plot_M1_hold_potent(td_train,hue_order=['RTT','CST']),
     # 'task_M1_potent_lda': src.plot_M1_potent_lda(td_train,hue_order=['RTT','CST']),
     # 'task_M1_null_lda': src.plot_M1_null_lda(td_train,hue_order=['RTT','CST']),
     # LDA traces
-    'task_lda_trace':src.context_analysis_deprecated.plot_M1_lda_traces(td_test_move.query('epoch=="hold_move"'),ref_event='idx_goCueTime',label_colors={'RTT':'r','CST':'b'}),
-    'task_lda_trace_pretask':src.context_analysis_deprecated.plot_M1_lda_traces(td_test_move.query('epoch=="hold_move_ref_cue"'),ref_event='idx_pretaskHoldTime',label_colors={'RTT':'r','CST':'b'}),
-    'task_lda_trace':src.context_analysis_deprecated.plot_M1_lda_traces(td_test_move.query('epoch=="full"'),ref_event='idx_goCueTime',label_colors={'RTT':'r','CST':'b'}),
+    'task_lda_trace':src.cst_rtt_context_analysis.plot_M1_lda_traces(td_test_move.query('epoch=="hold_move"'),ref_event='idx_goCueTime',label_colors={'RTT':'r','CST':'b'}),
+    'task_lda_trace_pretask':src.cst_rtt_context_analysis.plot_M1_lda_traces(td_test_move.query('epoch=="hold_move_ref_cue"'),ref_event='idx_pretaskHoldTime',label_colors={'RTT':'r','CST':'b'}),
+    'task_lda_trace':src.cst_rtt_context_analysis.plot_M1_lda_traces(td_test_move.query('epoch=="full"'),ref_event='idx_goCueTime',label_colors={'RTT':'r','CST':'b'}),
 }
 
 fig,axs = plt.subplots(1,2,figsize=(6,2), sharey=True, gridspec_kw={'width_ratios':[1,4]})
-src.context_analysis_deprecated.plot_separability_dynamics(td_test_move,'Time from pretask hold (s)',ax=axs[0],time_lims=[-0.5,1],pred_name='M1_pred')
-src.context_analysis_deprecated.plot_separability_dynamics(td_test_move,'Time from go cue (s)',ax=axs[1],time_lims=[-1,5],pred_name='M1_pred')
+src.cst_rtt_context_analysis.plot_separability_dynamics(td_test_move,'Time from pretask hold (s)',ax=axs[0],time_lims=[-0.5,1],pred_name='M1_pred')
+src.cst_rtt_context_analysis.plot_separability_dynamics(td_test_move,'Time from go cue (s)',ax=axs[1],time_lims=[-1,5],pred_name='M1_pred')
 sns.despine(ax=axs[1],left=True)
 
 fig,axs = plt.subplots(1,2,figsize=(6,2), sharey=True, gridspec_kw={'width_ratios':[1,4]})
-src.context_analysis_deprecated.plot_separability_dynamics(td_test_move,'Time from pretask hold (s)',ax=axs[0],time_lims=[-0.5,1],pred_name='beh_pred')
-src.context_analysis_deprecated.plot_separability_dynamics(td_test_move,'Time from go cue (s)',ax=axs[1],time_lims=[-1,5],pred_name='beh_pred')
+src.cst_rtt_context_analysis.plot_separability_dynamics(td_test_move,'Time from pretask hold (s)',ax=axs[0],time_lims=[-0.5,1],pred_name='beh_pred')
+src.cst_rtt_context_analysis.plot_separability_dynamics(td_test_move,'Time from go cue (s)',ax=axs[1],time_lims=[-1,5],pred_name='beh_pred')
 sns.despine(ax=axs[1],left=True)
 ```
 
@@ -459,14 +456,14 @@ td_full = (
 )
 
 fig,axs = plt.subplots(1,2,figsize=(6,2), sharey=True, gridspec_kw={'width_ratios':[1,4]})
-src.context_analysis_deprecated.plot_any_dim_separability(
+src.cst_rtt_context_analysis.plot_any_dim_separability(
     td_full,
     signal='M1_pca',
     ref_time_col='Time from pretask hold (s)',
     time_lims=[-0.5,1],
     ax=axs[0],
 )
-src.context_analysis_deprecated.plot_any_dim_separability(
+src.cst_rtt_context_analysis.plot_any_dim_separability(
     td_full,
     signal='M1_pca',
     ref_time_col='Time from go cue (s)',
@@ -476,14 +473,14 @@ src.context_analysis_deprecated.plot_any_dim_separability(
 sns.despine(ax=axs[1],left=True)
 
 fig,axs = plt.subplots(1,2,figsize=(6,2), sharey=True, gridspec_kw={'width_ratios':[1,4]})
-src.context_analysis_deprecated.plot_any_dim_separability(
+src.cst_rtt_context_analysis.plot_any_dim_separability(
     td_full,
     signal='beh_sig',
     ref_time_col='Time from pretask hold (s)',
     time_lims=[-0.5,1],
     ax=axs[0],
 )
-src.context_analysis_deprecated.plot_any_dim_separability(
+src.cst_rtt_context_analysis.plot_any_dim_separability(
     td_full,
     signal='beh_sig',
     ref_time_col='Time from go cue (s)',
@@ -559,15 +556,15 @@ td_full = (
     .assign(beh_sig=lambda x: x.apply(lambda y: np.column_stack([y['rel_hand_pos'][:,[0,1,2]],y['hand_vel'][:,:]]),axis=1))
 )
 
-M1_sep_profiles,M1_lda_coefs = src.context_analysis_deprecated.get_train_test_separability(td_full,signal='M1_pca')
-# PMd_sep_profiles,PMd_lda_coefs = src.context_analysis_deprecated.get_train_test_separability(td_full,signal='PMd_pca')
-# MC_sep_profiles,MC_lda_coefs = src.context_analysis_deprecated.get_train_test_separability(td_full,signal='MC_pca')
-beh_sep_profiles,_ = src.context_analysis_deprecated.get_train_test_separability(td_full,signal='beh_sig')
+# M1_sep_profiles,M1_lda_coefs = src.cst_rtt_context_analysis.get_train_test_separability(td_full,signal='M1_pca')
+# PMd_sep_profiles,PMd_lda_coefs = src.cst_rtt_context_analysis.get_train_test_separability(td_full,signal='PMd_pca')
+MC_sep_profiles,MC_lda_coefs = src.cst_rtt_context_analysis.get_train_test_separability(td_full,signal='MC_pca')
+# beh_sep_profiles,_ = src.cst_rtt_context_analysis.get_train_test_separability(td_full,signal='beh_sig')
 
 fig,axs = plt.subplots(1,2)
 sns.heatmap(
     data = (
-        M1_sep_profiles
+        MC_sep_profiles
         .reset_index()
         .assign(**{
             'Time from go cue (s)': lambda x: x['test_time']/np.timedelta64(1,'s'),
@@ -606,7 +603,7 @@ def plot_lda_coef_angle(lda_coefs,ax=None):
     return ax
 
 ang_fig, ang_ax = plt.subplots(1,1)
-ang_ax = plot_lda_coef_angle(M1_lda_coefs)
+ang_ax = plot_lda_coef_angle(MC_lda_coefs)
 ang_ax.set_title('Angle between LDA axes trained at different time bins (deg)')
 ang_ax.set_xlabel('Time bin')
 ang_ax.set_ylabel('Time bin')
@@ -617,7 +614,7 @@ Seems like there's two main blocks of separability: one transient during the cue
 One way to check out how similar the LDA axes are is to run SVD on the matrix of LDA coefficients and plot out the singular values to look for an elbow. It might also be important to exclude LD axes that led to chance separation, but possibly a kludge would be to just take the axes from -0.3s to 5s from the go cue, omitting the times when the monkey didn't know which type of trial was coming up.
 
 ```{python}
-coefs = np.row_stack(M1_lda_coefs.loc[pd.Timedelta(-0.3,'s'):pd.Timedelta(2,'s')]).T
+coefs = np.row_stack(MC_lda_coefs.loc[pd.Timedelta(-0.3,'s'):pd.Timedelta(2,'s')]).T
 # coefs = np.row_stack(M1_lda_coefs).T
 coefs = coefs/np.linalg.norm(coefs,axis=0)
 
@@ -630,7 +627,7 @@ sns.heatmap(coefs,ax=axs[0])
 sns.heatmap(coefs_approx,ax=axs[1])
 sns.lineplot(x=np.arange(S.shape[0])+1,y=S,ax=axs[2])
 
-td_full['M1_sep_space'] = [neural_sig @ U[:,:num_comps] for neural_sig in td_full['M1_pca']]
+td_full['MC_sep_space'] = [neural_sig @ U[:,:num_comps] for neural_sig in td_full['MC_pca']]
 
 task_colors={'RTT': 'r','CST': 'b'}
 td_temp = (
@@ -646,7 +643,7 @@ for _,trial in td_temp.groupby('task').sample(n=50).iterrows():
     for compnum in range(num_comps):
         axs[compnum].plot(
             trial['trialtime'],
-            trial['M1_sep_space'][:,compnum],
+            trial['MC_sep_space'][:,compnum],
             color=task_colors[trial['task']],
             alpha=0.1,
             lw=2,
@@ -655,14 +652,14 @@ for _,trial in td_temp.groupby('task').sample(n=50).iterrows():
         axs[compnum].set_ylim([-0.3,0.3])
         axs[compnum].set_ylabel(f'Comp {compnum+1}')
 axs[-1].set_xlabel('Time from go cue (s)')
-axs[0].set_title('M1 separability space')
+axs[0].set_title('MC separability space')
 sns.despine(fig=fig,trim=True)
 
 fig,ax = plt.subplots(1,1)
 for _,trial in td_full.groupby('task').sample(n=10).iterrows():
     ax.plot(
-        trial['M1_sep_space'][:,0],
-        trial['M1_sep_space'][:,1],
+        trial['MC_sep_space'][:,0],
+        trial['MC_sep_space'][:,1],
         color=task_colors[trial['task']],
         alpha=0.1
     )
