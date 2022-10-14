@@ -89,7 +89,7 @@ from src import dpca_wrap
 # Compose the neural data tensor
 # This is a 4D tensor with dimensions (num_trials, num_neurons, num_tasks, num_time_bins)
 array = 'MC'
-td_epoch = src.context_analysis.extract_td_epochs(td)
+td_epoch = src.cst_rtt_context_analysis.extract_td_epochs(td)
 td_dpca = (
     td_epoch.copy()
     .loc[td_epoch['epoch']=='full_trim',:]
