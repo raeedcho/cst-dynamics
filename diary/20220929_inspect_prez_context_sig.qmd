@@ -556,10 +556,10 @@ td_full = (
     .assign(beh_sig=lambda x: x.apply(lambda y: np.column_stack([y['rel_hand_pos'][:,[0,1,2]],y['hand_vel'][:,:]]),axis=1))
 )
 
-# M1_sep_profiles,M1_lda_coefs = src.cst_rtt_context_analysis.get_train_test_separability(td_full,signal='M1_pca')
-# PMd_sep_profiles,PMd_lda_coefs = src.cst_rtt_context_analysis.get_train_test_separability(td_full,signal='PMd_pca')
+M1_sep_profiles,M1_lda_coefs = src.cst_rtt_context_analysis.get_train_test_separability(td_full,signal='M1_pca')
+PMd_sep_profiles,PMd_lda_coefs = src.cst_rtt_context_analysis.get_train_test_separability(td_full,signal='PMd_pca')
 MC_sep_profiles,MC_lda_coefs = src.cst_rtt_context_analysis.get_train_test_separability(td_full,signal='MC_pca')
-# beh_sep_profiles,_ = src.cst_rtt_context_analysis.get_train_test_separability(td_full,signal='beh_sig')
+beh_sep_profiles,_ = src.cst_rtt_context_analysis.get_train_test_separability(td_full,signal='beh_sig')
 
 fig,axs = plt.subplots(1,2)
 sns.heatmap(
@@ -611,7 +611,7 @@ ang_ax.set_ylabel('Time bin')
 
 Seems like there's two main blocks of separability: one transient during the cued hold, and one tonic through the movement period. It also looks like the LDA axes during the cued hold period are pretty much orthogonal to the ones during the thick of movement. Possibly the post-go cue axes are somewhere in between.
 
-One way to check out how similar the LDA axes are is to run SVD on the matrix of LDA coefficients and plot out the singular values to look for an elbow. It might also be important to exclude LD axes that led to chance separation, but possibly a kludge would be to just take the axes from -0.3s to 5s from the go cue, omitting the times when the monkey didn't know which type of trial was coming up.
+One way to check out how similar the LDA axes are is to run SVD on the matrix of LDA coefficients and plot out the singular values to look for an elbow. It might also be important to exclude LD axes that led to chance separation, but possibly a kludge would be to just take the axes from -0.3s to 2s from the go cue, omitting the times when the monkey didn't know which type of trial was coming up, as well as times by which the monkey's arm has dropped in space (i.e. times at which behavior is more separable).
 
 ```{python}
 coefs = np.row_stack(MC_lda_coefs.loc[pd.Timedelta(-0.3,'s'):pd.Timedelta(2,'s')]).T
