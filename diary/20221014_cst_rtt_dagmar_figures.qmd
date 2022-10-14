@@ -1,0 +1,145 @@
+---
+title: Figures for Dagmar's CRCNS PI talk
+date: 2022-10-14
+format:
+  html:
+    toc: true
+    toc-location: left
+    cap-location: margin
+    code-fold: true
+    execute: true
+    self-contained: false
+    freeze: true
+jupyter: python3
+---
+
+## Setup
+
+Dagmar's giving a 20-ish minute talk about CST work--she'll mainly be focusing on Mohsen's optimal feedback control modeling work with human subjects, but wants to throw in some teasers on trying to understand neural activity at the end. She estimates maybe 3-5 minutes devoted to it, so it needs to be short and sweet.
+
+Here's an outline of what I think should go into that 3-5 minutes:
+
+- A visual description of the RTT task as a comparison to CST (which will already have been described by this point)
+- A representation of the behavioral traces from CST and RTT--basically a few examples of hand position against time for both tasks. Dagmar is also asking for a cursor v. time trace on the CST plots for visual continuity, but RTT can just have the hand position.
+- A plot showing neural activity along the axis that best correlates with hand velocity, plotted against hand velocity
+- A plot showing neural activity along the axis that separates context, plotted against hand velocity.
+
+And that's probably all that can really fit in there I think.
+
+I suppose I'll do the RTT figure in Illustrator, but I'll generate the rest here.
+
+```{python}
+import src
+import pyaldata
+import pandas as pd
+import numpy as np
+import yaml
+
+from sklearn.decomposition import PCA
+
+from ipywidgets import interact
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+sns.set_context('paper')
+
+%load_ext autoreload
+%autoreload 2
+
+params = {
+    'verbose': True,
+    'keep_unsorted': True,
+    'bin_size': 0.010,
+}
+
+filename = '../data/trial_data/Prez_20220720_RTTCSTCO_TD.mat'
+td = (
+    pyaldata.mat2dataframe(
+        filename,
+        shift_idx_fields=True,
+        td_name='trial_data'
+    )
+    .assign(
+        date_time=lambda x: pd.to_datetime(x['date_time']),
+        session_date=lambda x: pd.DatetimeIndex(x['date_time']).normalize()
+    )
+    .query('task=="RTT" | task=="CST"')
+    .pipe(src.data.remove_aborts, verbose=params['verbose'])
+    .pipe(src.data.remove_artifact_trials, verbose=params['verbose'])
+    .pipe(
+        src.data.filter_unit_guides,
+        filter_func=lambda guide: guide[:,1] > (0 if params['keep_unsorted'] else 1)
+    )
+    .pipe(src.data.remove_correlated_units)
+    .pipe(
+        src.data.remove_all_low_firing_neurons,
+        threshold=0.1,
+        divide_by_bin_size=True,
+        verbose=params['verbose']
+    )
+    .pipe(pyaldata.add_firing_rates,method='smooth', std=0.05, backend='convolve')
+    .pipe(src.data.trim_nans, ref_signals=['rel_hand_pos'])
+    .pipe(src.data.fill_kinematic_signals)
+    .pipe(src.data.rebin_data,new_bin_size=params['bin_size'])
+    .pipe(pyaldata.soft_normalize_signal,signals=['M1_rates','PMd_rates','MC_rates'])
+    .pipe(pyaldata.dim_reduce,PCA(n_components=15),'M1_rates','M1_pca')
+    .pipe(pyaldata.dim_reduce,PCA(n_components=15),'PMd_rates','PMd_pca')
+    .pipe(pyaldata.dim_reduce,PCA(n_components=15),'MC_rates','MC_pca')
+)
+```
+
+## Behavioral traces
+
+A couple random trials of CST and RTT...
+
+```{python}
+td_trace = (
+    td.copy()
+    .pipe(pyaldata.restrict_to_interval,start_point_name='idx_goCueTime',end_point_name='idx_endTime',rel_end=-1,warn_per_trial=True)
+    .pipe(src.data.add_trial_time)
+)
+for _,trial in td_trace.groupby('task').sample(n=2).iterrows():
+    fig,ax=plt.subplots(1,1)
+    src.plot.plot_hand_trace(trial,ax=ax)
+```
+
+## Neural dimensions
+
+First, we have to find the direction of neural activity most related to hand velocity.
+
+```{python}
+from sklearn.linear_model import LinearRegression
+from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
+
+vel_model = LinearRegression(fit_intercept=False)
+context_model = LinearDiscriminantAnalysis()
+
+vel_model.fit(
+    np.row_stack(td_trace['MC_pca']),
+    np.row_stack(td_trace['hand_vel'])[:,0],
+)
+
+context_model.fit(
+    np.row_stack(td_trace.apply(lambda x: x['MC_pca'][200,:],axis=1)),
+    td_trace['task'],
+)
+
+def norm_vec(vec):
+    return vec/np.linalg.norm(vec)
+
+td_trace['MC_hand_vel'] = [(sig @ norm_vec(vel_model.coef_).squeeze()[:,None]).squeeze() for sig in td_trace['MC_pca']]
+td_trace['MC_context'] = [(sig @ norm_vec(context_model.coef_).squeeze()[:,None]).squeeze() for sig in td_trace['MC_pca']]
+
+td_explode = (
+    td_trace
+    .assign(x_vel=lambda x: x.apply(lambda y: y['hand_vel'][:,0],axis=1))
+    .loc[:,['task','MC_hand_vel','MC_context','x_vel']]
+    .explode(['x_vel','MC_hand_vel','MC_context'])
+)
+sns.scatterplot(
+    data=td_explode,
+    x='x_vel',
+    y='MC_context',
+    hue='task',
+)
+```

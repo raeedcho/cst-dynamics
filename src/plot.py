@@ -90,3 +90,25 @@ def make_trial_raster(trial, ax=None, sig='M1_spikes', events=None, ref_event_id
     sns.despine(ax=ax,left=True,bottom=False,trim=True,offset=10)
 
     return ax
+
+def plot_hand_trace(trial,ax=None):
+    if ax is None:
+        ax = plt.gca()
+
+    ax.plot([0,trial['trialtime'][-1]],[0,0],'-k')
+    ax.plot(
+        trial['trialtime'],
+        trial['rel_cursor_pos'][:,0],
+        c='b',
+        alpha=0.25,
+    )
+    ax.plot(
+        trial['trialtime'],
+        trial['rel_hand_pos'][:,0],
+        c='r',
+    )
+    ax.set_ylim(-50,50)
+    ax.set_ylabel('Hand position')
+    ax.set_xlabel('Time after go cue (s)')
+    ax.set_title(f'Trial {trial.name} ({trial["task"]})')
+    sns.despine(ax=ax,trim=True)
