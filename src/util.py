@@ -2,6 +2,25 @@ import pyaldata
 import pandas as pd
 import numpy as np
 
+def format_outfile_name(trial_data,postfix=''):
+    '''
+    Format a filename for output based on the trial_data structure
+    
+    Arguments:
+        trial_data (DataFrame): PyalData formatted structure of neural/behavioral data
+        postfix (str): postfix to add to the filename
+        
+    Returns:
+        (str): formatted filename
+    '''
+    filename = '{monkey}_{session_date}_{postfix}'.format(
+        monkey=trial_data['monkey'].values[0],
+        session_date=np.datetime_as_string(trial_data['session_date'].values[0],'D').replace('-',''),
+        postfix=postfix
+    )
+
+    return filename
+    
 def angle_between(v1,v2):
     '''
     Calculate the angle between vectors

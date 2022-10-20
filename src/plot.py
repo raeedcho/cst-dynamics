@@ -105,10 +105,9 @@ def plot_hand_trace(trial,ax=None):
     ax.plot(
         trial['trialtime'],
         trial['rel_hand_pos'][:,0],
-        c='r',
+        c='k',
     )
-    ax.set_ylim(-50,50)
+    ax.set_ylim(-60,60)
     ax.set_ylabel('Hand position')
     ax.set_xlabel('Time after go cue (s)')
-    ax.set_title(f'Trial {trial.name} ({trial["task"]})')
     sns.despine(ax=ax,trim=True)
