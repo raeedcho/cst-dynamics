@@ -3,4 +3,5 @@ src/__pycache__
 /.quarto/
 reports/
 _freeze/
-
+results/2022_sfn_poster
+results/dagmar_talk
