@@ -45,7 +45,7 @@ def subspace_overlap_index(X,Y,num_dims=10):
 
     return soi
 
-def bootstrap_subspace_overlap(td_grouped,num_bootstraps):
+def bootstrap_subspace_overlap(td_grouped,signal='M1_rates',num_bootstraps=100,num_dims=10):
     '''
     Compute subspace overlap for each pair of tasks and epochs,
     with bootstrapping to get distributions
@@ -60,12 +60,12 @@ def bootstrap_subspace_overlap(td_grouped,num_bootstraps):
     '''
     td_boots = []
     for boot_id in range(num_bootstraps):
-        data_td = td_grouped.agg(
-            M1_rates = ('M1_rates',lambda rates : np.row_stack(rates.sample(frac=1,replace=True)))
-        )
-        proj_td = td_grouped.agg(
-            M1_rates = ('M1_rates',lambda rates : np.row_stack(rates.sample(frac=1,replace=True)))
-        )
+        data_td = td_grouped.agg(**{
+            signal: (signal,lambda rates : np.row_stack(rates.sample(frac=1,replace=True)))
+        })
+        proj_td = td_grouped.agg(**{
+            signal: (signal,lambda rates : np.row_stack(rates.sample(frac=1,replace=True)))
+        })
         td_pairs = data_td.join(
             proj_td,
             how='cross',
@@ -79,13 +79,13 @@ def bootstrap_subspace_overlap(td_grouped,num_bootstraps):
     td_boots = pd.concat(td_boots).reset_index(drop=True)
     
     td_boots['subspace_overlap'] = [
-        subspace_overlap_index(data,proj,num_dims=10)
-        for data,proj in zip(td_boots['M1_rates_data'],td_boots['M1_rates_proj'])
+        subspace_overlap_index(data,proj,num_dims=num_dims)
+        for data,proj in zip(td_boots[f'{signal}_data'],td_boots[f'{signal}_proj'])
     ]
 
     td_boots['subspace_overlap_rand'] = [
-        subspace_overlap_index(data,util.random_array_like(data),num_dims=10)
-        for data in td_boots['M1_rates_data']
+        subspace_overlap_index(data,util.random_array_like(data),num_dims=num_dims)
+        for data,proj in zip(td_boots[f'{signal}_data'],td_boots[f'{signal}_proj'])
     ]
 
     return td_boots
