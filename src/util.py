@@ -157,3 +157,18 @@ def extract_metaframe(td,metacols=['trial_id']):
     #meta_df.columns = pd.MultiIndex.from_product([['meta'],meta_df.columns])
     meta_df.columns = pd.MultiIndex.from_tuples(list(zip(meta_df.columns,meta_df.columns)))
     return meta_df
+
+def random_array_like(array):
+    '''
+    Returns an array of the same size as input,
+    with the same overall mean and standard deviation
+    (assuming a normal distribution)
+    
+    Arguments:
+        array (np.array): array to imitate
+        
+    Returns:
+        np.array: array with same mean and standard deviation
+    '''
+    rng = np.random.default_rng()
+    return rng.standard_normal(array.shape) * np.std(array) + np.mean(array)
