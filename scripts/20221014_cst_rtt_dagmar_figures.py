@@ -26,6 +26,7 @@ from sklearn.decomposition import PCA
 from ipywidgets import interact
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
+from matplotlib.patches import Rectangle,Circle
 import matplotlib.animation as animation
 import matplotlib as mpl
 import seaborn as sns
@@ -33,8 +34,8 @@ import seaborn as sns
 mpl.rcParams['pdf.fonttype'] = 42
 sns.set_context('talk')
 
-#%load_ext autoreload
-#%autoreload 2
+%load_ext autoreload
+%autoreload 2
 
 params = {
     'verbose': True,
@@ -108,21 +109,10 @@ print(f'Angle between velocity dim and context dim: {src.util.angle_between(vel_
 
 #%% Behavioral traces
 def plot_trial(trial):
+    targ_size = 10
     fig,axs=plt.subplots(3,1,sharex=True,figsize=(6,6))
-    # hand position
-    axs[0].plot([0,trial['trialtime'][-1]],[0,0],'-k')
-    axs[0].plot(
-        trial['trialtime'],
-        trial['rel_cursor_pos'][:,0],
-        c='b',
-        # alpha=0.25,
-    )
-    axs[0].plot(
-        trial['trialtime'],
-        trial['rel_hand_pos'][:,0],
-        c='r',
-    )
-    axs[0].set_ylim(-60,60)
+    
+    src.plot.plot_hand_trace(trial,ax=axs[0])
 
     # hand velocity
     axs[1].plot([0,trial['trialtime'][-1]],[0,0],'-k')
@@ -141,10 +131,12 @@ def plot_trial(trial):
     )
     axs[2].set_yticks([])
 
+    axs[0].set_xlabel('')
     axs[0].set_ylabel('Hand position')
+    axs[1].set_xlabel('')
     axs[1].set_ylabel('Hand velocity')
-    axs[2].set_ylabel('Motor cortex\nvelocity dim')
     axs[2].set_xlabel('Time from go cue (s)')
+    axs[2].set_ylabel('Motor cortex\nvelocity dim')
     axs[0].set_title(f'Trial {trial["trial_id"]} ({trial["task"]})')
 
     sns.despine(fig=fig,trim=True)
@@ -230,77 +222,58 @@ sns.despine(fig=fig,trim=True)
 fig_name = src.util.format_outfile_name(td,postfix='neural_dims_v_time')
 fig.savefig(os.path.join('../results/dagmar_talk/',fig_name+'.pdf'))
 
-# %%
-fig = plt.figure(figsize=(10,6))
-gs = mpl.gridspec.GridSpec(2,2,figure=fig)
-beh_ax = fig.add_subplot(gs[0,0])
-raster_ax = fig.add_subplot(gs[1,0])
-pop_ax = fig.add_subplot(gs[:,1])
-
-beh_ax.plot([0,6],[0,0],color='k')
-cursor_trace, = beh_ax.plot([],[],color='b')
-hand_trace, = beh_ax.plot([],[],color='r')
-beh_ax.set_xlim([0,6])
-beh_ax.set_ylim([-50,50])
-beh_ax.set_xticks([])
-beh_ax.set_ylabel('Hand position (cm)')
-sns.despine(ax=beh_ax,trim=True,bottom=True)
-
-raster_trace, =  raster_ax.plot([],[],'|k',markersize=1)
-raster_ax.set_ylim([0,88])
-raster_ax.set_xlim([0,6])
-raster_ax.set_yticks([])
-raster_ax.set_ylabel('Neurons')
-raster_ax.set_xlabel('Time from go cue (s)')
-sns.despine(ax=raster_ax, left=True, bottom=False, trim=True, offset=10)
-
-pop_ax.plot([-0.4,-0.15],[-0.4,-0.4],color='k',lw=5)
-pop_ax.text(-0.35,-0.45,'PC1',fontsize=18)
-pop_ax.plot([-0.4,-0.4],[-0.4,-0.15],color='k',lw=5)
-pop_ax.text(-0.475,-0.3,'PC2',fontsize=18,rotation=90)
-pop_trace, = pop_ax.plot([],[],color='k')
-pop_ax.set_xlim([-0.5,0.5])
-pop_ax.set_ylim([-0.5,0.5])
-pop_ax.set_xticks([])
-pop_ax.set_yticks([])
-sns.despine(ax=pop_ax,left=True,bottom=True)
-
-plt.tight_layout()
-
-def plot_trial_timecourse(trial,slicer=slice(None)):
-    cursor_trace.set_data(
-        trial['trialtime'][slicer],
-        trial['rel_cursor_pos'][slicer,0],
-    )
-    hand_trace.set_data(
-        trial['trialtime'][slicer],
-        trial['rel_hand_pos'][slicer,0],
-    )
-
-    # raster
-    spike_bins,spike_neurons = np.nonzero(trial['MC_spikes'][slicer,:])
-    raster_trace.set_data(
-        trial['bin_size']*spike_bins,
-        spike_neurons,
-    )
-
-    # first two PCs
-    pop_trace.set_data(
-        trial['MC_pca'][slicer,0],
-        trial['MC_pca'][slicer,1],
-    )
-    return [cursor_trace,hand_trace,raster_trace,pop_trace]
-
-    # fig.suptitle(f'Trial {trial["trial_id"]} ({trial["task"]})')
-
-
+# %% Trial animation (hand movement, raster, PC1 v PC2 population)
 def animate_trial_timecourse(trial):
+    fig = plt.figure(figsize=(10,6))
+    gs = mpl.gridspec.GridSpec(2,2,figure=fig)
+    beh_ax = fig.add_subplot(gs[0,0])
+    raster_ax = fig.add_subplot(gs[1,0])
+    pop_ax = fig.add_subplot(gs[:,1])
+
+    src.plot.plot_hand_trace(trial,ax=beh_ax)
+    beh_blocker = beh_ax.add_patch(Rectangle((0,-100),10,200,color='w',zorder=100))
+    beh_ax.set_xlim([0,6])
+    beh_ax.set_xticks([])
+    beh_ax.set_xlabel('')
+    beh_ax.set_ylabel('Hand position (cm)')
+    sns.despine(ax=beh_ax,trim=True,bottom=True)
+
+    src.plot.make_trial_raster(trial,ax=raster_ax,sig='MC_spikes')
+    raster_blocker = raster_ax.add_patch(Rectangle((0,-100),10,200,color='w',zorder=100))
+    raster_ax.set_ylim([0,88])
+    raster_ax.set_xlim([0,6])
+    raster_ax.set_ylabel('Neurons')
+    raster_ax.set_xlabel('Time from go cue (s)')
+
+    pop_ax.plot([-0.4,-0.15],[-0.4,-0.4],color='k',lw=5)
+    pop_ax.text(-0.35,-0.45,'PC1',fontsize=18)
+    pop_ax.plot([-0.4,-0.4],[-0.4,-0.15],color='k',lw=5)
+    pop_ax.text(-0.475,-0.3,'PC2',fontsize=18,rotation=90)
+    pop_trace, = pop_ax.plot([],[],color='k')
+    pop_ax.set_xlim([-0.5,0.5])
+    pop_ax.set_ylim([-0.5,0.5])
+    pop_ax.set_xticks([])
+    pop_ax.set_yticks([])
+    sns.despine(ax=pop_ax,left=True,bottom=True)
+
+    plt.tight_layout()
+
+    def plot_trial_timecourse(trial,end_idx=None):
+        beh_blocker.set(x=trial['trialtime'][end_idx])
+        raster_blocker.set(x=trial['trialtime'][end_idx])
+    
+        # first two PCs
+        pop_trace.set_data(
+            trial['MC_pca'][:end_idx,0],
+            trial['MC_pca'][:end_idx,1],
+        )
+        return [beh_blocker,raster_blocker,pop_trace]
+
     def init_plot():
-        cursor_trace.set_data([],[])
-        hand_trace.set_data([],[])
-        raster_trace.set_data([],[])
+        beh_blocker.set(x=0)
+        raster_blocker.set(x=0)
         pop_trace.set_data([],[])
-        return [cursor_trace,hand_trace,raster_trace,pop_trace]
+        return [beh_blocker,raster_blocker,pop_trace]
 
     def animate(frame_time):
         epoch_fun = src.util.generate_realtime_epoch_fun(
@@ -309,7 +282,7 @@ def animate_trial_timecourse(trial):
         )
         anim_slice = epoch_fun(trial)
 
-        return plot_trial_timecourse(trial,slicer=anim_slice)
+        return plot_trial_timecourse(trial,end_idx=anim_slice.stop)
 
     frame_interval = 30 #ms
     frames = np.arange(trial['trialtime'][0],trial['trialtime'][-1],frame_interval*1e-3)
@@ -325,12 +298,11 @@ def animate_trial_timecourse(trial):
     return anim
 
 trial_to_plot=228
-# plot_trial_timecourse(td.loc[td['trial_id']==trial_to_plot].squeeze())
 anim = animate_trial_timecourse(td.loc[td['trial_id']==trial_to_plot].squeeze())
 anim_name = src.util.format_outfile_name(td,postfix=f'trial_{trial_to_plot}_anim')
 anim.save(os.path.join('../results/dagmar_talk/',anim_name+'.mp4'),writer='ffmpeg',fps=30,dpi=400)
 
-# %%
+# %% Animate comparison of CST vs RTT example trials
 def animate_context_vel_dims(cst_trial,rtt_trial):
     fig = plt.figure(figsize=(10,6))
     gs = mpl.gridspec.GridSpec(2,2,figure=fig)
@@ -338,22 +310,19 @@ def animate_context_vel_dims(cst_trial,rtt_trial):
     cst_ax = fig.add_subplot(gs[1,0])
     pop_ax = fig.add_subplot(gs[:,1])
 
-    rtt_ax.plot([0,6],[0,0],color='k')
-    rtt_hand_trace, = rtt_ax.plot([],[],color='r')
+    src.plot.plot_hand_trace(rtt_trial,ax=rtt_ax)
+    rtt_blocker = rtt_ax.add_patch(Rectangle((0,-100),10,200,color='w',zorder=100))
     rtt_ax.set_xlim([0,6])
-    rtt_ax.set_ylim([-50,50])
     rtt_ax.set_xticks([])
+    rtt_ax.set_xlabel('')
     rtt_ax.set_ylabel('RTT\nHand position (cm)')
     sns.despine(ax=rtt_ax,trim=True,bottom=True)
 
-    cst_ax.plot([0,6],[0,0],color='k')
-    cst_cursor_trace, = cst_ax.plot([],[],color='b')
-    cst_hand_trace, = cst_ax.plot([],[],color='r')
+    src.plot.plot_hand_trace(cst_trial,ax=cst_ax)
+    cst_blocker = cst_ax.add_patch(Rectangle((0,-100),10,200,color='w',zorder=100))
     cst_ax.set_xlim([0,6])
-    cst_ax.set_ylim([-50,50])
-    cst_ax.set_xticks([])
     cst_ax.set_ylabel('CST\nHand position (cm)')
-    sns.despine(ax=cst_ax,trim=True,bottom=True)
+    sns.despine(ax=cst_ax,trim=True)
 
     pop_ax.plot([-0.4,-0.15],[-0.4,-0.4],color='k',lw=5)
     pop_ax.text(-0.4,-0.45,'Velocity dim',fontsize=18)
@@ -371,13 +340,12 @@ def animate_context_vel_dims(cst_trial,rtt_trial):
     plt.tight_layout()
 
     def init_plot():
-        rtt_hand_trace.set_data([],[])
-        cst_hand_trace.set_data([],[])
-        cst_cursor_trace.set_data([],[])
+        rtt_blocker.set(x=0)
+        cst_blocker.set(x=0)
         cst_pop_trace.set_data([],[])
         rtt_pop_trace.set_data([],[])
 
-        return [rtt_hand_trace,cst_hand_trace,cst_cursor_trace,cst_pop_trace,rtt_pop_trace]
+        return [rtt_blocker,cst_blocker,cst_pop_trace,rtt_pop_trace]
 
     def animate(frame_time):
         epoch_fun = src.util.generate_realtime_epoch_fun(
@@ -387,18 +355,8 @@ def animate_context_vel_dims(cst_trial,rtt_trial):
         cst_anim_slice = epoch_fun(cst_trial)
         rtt_anim_slice = epoch_fun(rtt_trial)
 
-        rtt_hand_trace.set_data(
-            rtt_trial['trialtime'][rtt_anim_slice],
-            rtt_trial['rel_hand_pos'][rtt_anim_slice,0],
-        )
-        cst_hand_trace.set_data(
-            cst_trial['trialtime'][cst_anim_slice],
-            cst_trial['rel_hand_pos'][cst_anim_slice,0],
-        )
-        cst_cursor_trace.set_data(
-            cst_trial['trialtime'][cst_anim_slice],
-            cst_trial['rel_cursor_pos'][cst_anim_slice,0],
-        )
+        rtt_blocker.set(x=frame_time)
+        cst_blocker.set(x=frame_time)
         cst_pop_trace.set_data(
             cst_trial['Motor Cortex Velocity Dim'][cst_anim_slice],
             cst_trial['Motor Cortex Context Dim'][cst_anim_slice],
@@ -408,10 +366,10 @@ def animate_context_vel_dims(cst_trial,rtt_trial):
             rtt_trial['Motor Cortex Context Dim'][rtt_anim_slice],
         )
 
-        return [rtt_hand_trace,cst_hand_trace,cst_cursor_trace,cst_pop_trace,rtt_pop_trace]
+        return [rtt_blocker,cst_blocker,cst_pop_trace,rtt_pop_trace]
 
     frame_interval = 30 #ms
-    frames = np.arange(0,5,frame_interval*1e-3)
+    frames = np.arange(0,7,frame_interval*1e-3)
     anim = animation.FuncAnimation(
         fig,
         animate,
@@ -431,4 +389,96 @@ anim = animate_context_vel_dims(
 anim_name = src.util.format_outfile_name(td,postfix=f'cst_trial_{cst_trial_id}_rtt_trial_{rtt_trial_id}_context_vel_dims_anim')
 anim.save(os.path.join('../results/dagmar_talk/',anim_name+'.mp4'),writer='ffmpeg',fps=30,dpi=400)
 
+# %% Animation for a single trial's behavior
+def animate_trial_monitor(trial):
+    fig = plt.figure(figsize=(10,6))
+    gs = mpl.gridspec.GridSpec(2,2,figure=fig)
+    monitor_ax = fig.add_subplot(gs[:,0])
+    beh_ax = fig.add_subplot(gs[0,1])
+    raster_ax = fig.add_subplot(gs[1,1])
+
+    src.plot.plot_hand_trace(trial,ax=beh_ax)
+    beh_blocker = beh_ax.add_patch(Rectangle((0,-100),10,200,color='w',zorder=100))
+    beh_ax.set_xlim([0,6])
+    beh_ax.set_xticks([])
+    beh_ax.set_xlabel('')
+    beh_ax.set_ylabel('Hand position (cm)')
+    sns.despine(ax=beh_ax,trim=True,bottom=True)
+
+    src.plot.make_trial_raster(trial,ax=raster_ax,sig='MC_spikes')
+    raster_blocker = raster_ax.add_patch(Rectangle((0,-100),10,200,color='w',zorder=100))
+    raster_ax.set_ylim([0,88])
+    raster_ax.set_xlim([0,6])
+    raster_ax.set_ylabel('Neurons')
+    raster_ax.set_xlabel('Time from go cue (s)')
+
+    hand = monitor_ax.add_patch(Circle(trial['rel_hand_pos'][0,:2],5,color='r',fill=False))
+    cursor = monitor_ax.add_patch(Circle(trial['rel_cursor_pos'][0,:2], 5,zorder=100))
+    if trial['task'] == 'RTT':
+        cursor.set(color='y')
+        targets = [
+            monitor_ax.add_patch(Rectangle(
+                targ_loc[:2]-trial['ct_location'][:2]-[5,5],
+                10,
+                10,
+                color='r',
+                visible=False,
+            )) for targ_loc in trial['rt_locations']
+        ]
+    else:
+        cursor.set(color='b')
+        targets=[
+            monitor_ax.add_patch(Rectangle((-5,-5),10,10,color='0.25'))
+        ]
+
+    monitor_ax.set_xlim([-60,60])
+    monitor_ax.set_ylim([-60,60])
+    monitor_ax.set_xticks([])
+    monitor_ax.set_yticks([])
+    sns.despine(ax=monitor_ax,left=True,bottom=True)
+
+    plt.tight_layout()
+
+    def init_plot():
+        beh_blocker.set(x=0)
+        raster_blocker.set(x=0)
+        return [beh_blocker,raster_blocker]
+
+    def animate(frame_time):
+        beh_blocker.set(x=frame_time)
+        raster_blocker.set(x=frame_time)
+
+        frame_idx = int(frame_time/trial['bin_size'])
+        hand.set(center=trial['rel_hand_pos'][frame_idx,:2])
+        cursor.set(center=trial['rel_cursor_pos'][frame_idx,:2])
+
+        if trial['task']=='RTT':
+            idx_targ_start = trial['idx_rtgoCueTimes']
+            idx_targ_end = trial['idx_rtHoldTimes']
+            on_targs = (idx_targ_start<frame_idx) & (frame_idx<idx_targ_end)
+            for target,on_indicator in zip(targets,on_targs):
+                target.set(visible=on_indicator)
+
+        if trial['task']=='CST' and frame_idx>trial['idx_cstEndTime']:
+                cursor.set(color='y')
+    
+        return [beh_blocker,raster_blocker]
+
+    frame_interval = 30 #ms
+    frames = np.arange(trial['trialtime'][0],trial['trialtime'][-1],frame_interval*1e-3)
+    anim = animation.FuncAnimation(
+        fig,
+        animate,
+        init_func=init_plot,
+        frames = frames,
+        interval = frame_interval,
+        blit = True,
+    )
+
+    return anim
+
+for trial_to_plot in [227,228]:
+    anim = animate_trial_monitor(td.loc[td['trial_id']==trial_to_plot].squeeze())
+    anim_name = src.util.format_outfile_name(td,postfix=f'trial_{trial_to_plot}_monitor_anim')
+    anim.save(os.path.join('../results/dagmar_talk/',anim_name+'.mp4'),writer='ffmpeg',fps=30,dpi=400)
 # %%
