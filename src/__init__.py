@@ -8,3 +8,4 @@ from . import analysis
 from . import cst_rtt_context_analysis
 from . import subspace_tools
 from . import submovements
+from . import single_neuron_analysis
