@@ -1,6 +1,7 @@
 from configparser import Interpolation
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.patches import Rectangle
 import seaborn as sns
 
 def make_trial_raster(trial, ax=None, sig='M1_spikes', events=None, ref_event_idx=0):
@@ -95,19 +96,69 @@ def plot_hand_trace(trial,ax=None):
     if ax is None:
         ax = plt.gca()
 
-    ax.plot([0,trial['trialtime'][-1]],[0,0],'-k')
+    # zero line
+    ax.plot([trial['trialtime'][0],trial['trialtime'][-1]],[0,0],'-k')
+
+    # targets
+    targ_size = 10
+    ax.add_patch(Rectangle(
+        (trial['trialtime'][trial['idx_ctHoldTime']],-targ_size/2),
+        trial['trialtime'][trial['idx_pretaskHoldTime']]-trial['trialtime'][trial['idx_ctHoldTime']],
+        targ_size,
+        color='0.5',
+    ))
+    if trial['task']=='RTT':
+        ax.add_patch(Rectangle(
+            (trial['trialtime'][trial['idx_pretaskHoldTime']],-targ_size/2),
+            trial['trialtime'][trial['idx_goCueTime']]-trial['trialtime'][trial['idx_pretaskHoldTime']],
+            targ_size,
+            color='C1',
+        ))
+        for idx_targ_start,idx_targ_end,targ_loc in zip(
+            trial['idx_rtgoCueTimes'].astype(int),
+            trial['idx_rtHoldTimes'].astype(int),
+            trial['rt_locations'][:,0]-trial['ct_location'][0],
+        ):
+            ax.add_patch(Rectangle(
+                (trial['trialtime'][idx_targ_start],targ_loc-targ_size/2),
+                trial['trialtime'][idx_targ_end]-trial['trialtime'][idx_targ_start],
+                targ_size,
+                color='C1',
+            ))
+    elif trial['task']=='CST':
+        ax.add_patch(Rectangle(
+            (trial['trialtime'][trial['idx_pretaskHoldTime']],-targ_size/2),
+            trial['trialtime'][trial['idx_goCueTime']]-trial['trialtime'][trial['idx_pretaskHoldTime']],
+            targ_size,
+            color='C0',
+        ))
+
+    # cursor
     ax.plot(
         trial['trialtime'],
         trial['rel_cursor_pos'][:,0],
         c='b',
-        alpha=0.25,
+        alpha=0.5,
     )
+    
+    # hand
     ax.plot(
         trial['trialtime'],
         trial['rel_hand_pos'][:,0],
         c='k',
     )
     ax.set_ylim(-60,60)
-    ax.set_ylabel('Hand position')
+    ax.set_ylabel('Hand position (cm)')
     ax.set_xlabel('Time after go cue (s)')
     sns.despine(ax=ax,trim=True)
+
+def plot_hand_velocity(trial,ax=None):
+    if ax is None:
+        ax = plt.gca()
+
+    ax.plot([trial['trialtime'][0],trial['trialtime'][-1]],[0,0],'-k')
+    ax.plot(
+        trial['trialtime'],
+        trial['hand_vel'][:,0],
+        color='k',
+    )
