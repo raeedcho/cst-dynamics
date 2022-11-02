@@ -11,8 +11,6 @@ Script to generate figures for the 2022 SfN poster. The structure of the poster 
 - Neural activity occupies different regions of space depending on the task demands
 
 So the figures I need to generate:
-- sensorimotor plots for delayed LTI control
-- sensorimotor plot for example CST trial
 x Example trial traces for CST and RTT
 x Histograms of hand position and velocity for CST and RTT
 x Example rasters for CST and RTT
@@ -20,13 +18,16 @@ x Mean FR scatterplot between CST and RTT for all neurons
 x L/R selectivity scatterplot between CST and RTT for all neurons
 x Scree plots for CST and RTT
 x Subspace overlap between CST and RTT movement period
-~ Behavioral subspace overlap between CST and RTT
 - Context subspace dimensions
 - Separability traces along each dimension? (classification accuracy of simple threshold?)
+- sensorimotor plots for delayed LTI control
+- sensorimotor plot for example CST trial
+~ Behavioral subspace overlap between CST and RTT
+- Within vs. across velocity decoding
+- Velocity decoding performance of context subspace vs random subspaces
 '''
 
 #%% Setup
-from tracemalloc import start
 import src
 import pyaldata
 import pandas as pd
@@ -118,9 +119,10 @@ td = (
 #         warn_per_trial=True,
 #     )
 
-#%% Behavioral traces
+# fit velocity and context models
 vel_model = LinearRegression(fit_intercept=False)
-# context_model = LinearDiscriminantAnalysis()
+transient_context_model = LinearDiscriminantAnalysis()
+tonic_context_model = LinearDiscriminantAnalysis()
 
 td_models = src.data.rebin_data(td,new_bin_size=0.100)
 
@@ -129,19 +131,27 @@ vel_model.fit(
     np.row_stack(td_models['hand_vel'])[:,0],
 )
 
-# context_model.fit(
-#     np.row_stack(td_models.apply(lambda x: x['MC_pca'][20,:],axis=1)),
-#     td_models['task'],
-# )
+transient_context_model.fit(
+    np.row_stack(td_models.apply(lambda x: x['MC_pca'][x['idx_pretaskHoldTime']+3,:],axis=1)),
+    td_models['task'],
+)
+tonic_context_model.fit(
+    np.row_stack(td_models.apply(lambda x: x['MC_pca'][x['idx_goCueTime']+20,:],axis=1)),
+    td_models['task'],
+)
 
 def norm_vec(vec):
     return vec/np.linalg.norm(vec)
 
 td['Motor Cortex Velocity Dim'] = [(sig @ norm_vec(vel_model.coef_).squeeze()[:,None]).squeeze() for sig in td['MC_pca']]
-# td['Motor Cortex Context Dim'] = [(sig @ norm_vec(context_model.coef_).squeeze()[:,None]).squeeze() for sig in td['MC_pca']]
+td['Motor Cortex Transient Context Dim'] = [(sig @ norm_vec(transient_context_model.coef_).squeeze()[:,None]).squeeze() for sig in td['MC_pca']]
+td['Motor Cortex Tonic Context Dim'] = [(sig @ norm_vec(tonic_context_model.coef_).squeeze()[:,None]).squeeze() for sig in td['MC_pca']]
 
-# print(f'Angle between velocity dim and context dim: {src.util.angle_between(vel_model.coef_.squeeze(),context_model.coef_.squeeze())} degrees')
+print(f'Angle between velocity dim and tonic context dim: {src.util.angle_between(vel_model.coef_.squeeze(),tonic_context_model.coef_.squeeze())} degrees')
+print(f'Angle between velocity dim and transient context dim: {src.util.angle_between(vel_model.coef_.squeeze(),transient_context_model.coef_.squeeze())} degrees')
+print(f'Angle between transient and tonic context dims: {src.util.angle_between(tonic_context_model.coef_.squeeze(),transient_context_model.coef_.squeeze())} degrees')
 
+#%% Behavioral traces
 def plot_trial(trial):
     fig,axs=plt.subplots(4,1,sharex='col',sharey='row',figsize=(6,8))
 
@@ -159,10 +169,11 @@ def plot_trial(trial):
     axs[2].set_ylabel('Hand velocity (cm/s)')
 
     # neural dimension
+    axs[3].plot(go_cue_trial['trialtime'][[0,-1]],[0,0],'k-')
     axs[3].plot(
         go_cue_trial['trialtime'],
         go_cue_trial['Motor Cortex Velocity Dim'],
-        color=[0.5,0.5,0.5],
+        color='0.5',
     )
     axs[3].set_yticks([])
     axs[3].set_ylabel('Motor cortex\nvelocity dim')
@@ -207,30 +218,44 @@ td_explode = (
     .set_index(['trial_id','Time from go cue (s)'])
 )
 
-fig,axs = plt.subplots(2,1,figsize=(6,8))
-sns.kdeplot(
+# fig,axs = plt.subplots(2,1,figsize=(6,8))
+# sns.kdeplot(
+#     data=td_explode,
+#     y='Hand position (cm)',
+#     hue='task',
+#     ax=axs[0]
+# )
+# axs[0].set_ylim([-60,60])
+# axs[0].set_xticks([])
+# axs[0].set_xlabel('')
+# axs[0].get_legend().remove()
+# 
+# sns.kdeplot(
+#     data=td_explode,
+#     y='Hand velocity (cm/s)',
+#     hue='task',
+#     ax=axs[1]
+# )
+# axs[1].set_ylim([-300,300])
+# axs[1].set_xticks([])
+# sns.despine(fig=fig,trim=True,bottom=True)
+g=sns.jointplot(
     data=td_explode,
+    x='Hand velocity (cm/s)',
     y='Hand position (cm)',
     hue='task',
-    ax=axs[0]
+    hue_order=['CST','RTT'],
+    kind='kde',
+    xlim=[-300,300],
+    ylim=[-60,60],
+    joint_kws={'levels': 5},
+    marginal_ticks=False,
 )
-axs[0].set_ylim([-60,60])
-axs[0].set_xticks([])
-axs[0].set_xlabel('')
-axs[0].get_legend().remove()
+sns.despine(ax=g.ax_joint,trim=True)
+g.ax_joint.get_legend().remove()
 
-sns.kdeplot(
-    data=td_explode,
-    y='Hand velocity (cm/s)',
-    hue='task',
-    ax=axs[1]
-)
-axs[1].set_ylim([-300,300])
-axs[1].set_xticks([])
-
-sns.despine(fig=fig,trim=True,bottom=True)
 fig_name = src.util.format_outfile_name(td,postfix='cst_rtt_beh_histograms')
-fig.savefig(os.path.join('../results/2022_sfn_poster/',fig_name+'.pdf'))
+g.figure.savefig(os.path.join('../results/2022_sfn_poster/',fig_name+'.pdf'))
 
 #%% Single neuron analyses
 td_mean_fr = (
@@ -294,6 +319,31 @@ sns.despine(ax=ax,trim=True)
 fig_name = src.util.format_outfile_name(td,postfix='cst_rtt_lr_selectivity_comparison')
 fig.savefig(os.path.join('../results/2022_sfn_poster/',fig_name+'.pdf'))
 
+#%% PCA plots
+fig, ax = plt.subplots(1,1,figsize=(6,6))
+ax.plot([-0.4,-0.15],[-0.4,-0.4],color='k',lw=5)
+ax.text(-0.35,-0.45,'PC1',fontsize=18)
+ax.plot([-0.4,-0.4],[-0.4,-0.15],color='k',lw=5)
+ax.text(-0.475,-0.3,'PC2',fontsize=18,rotation=90)
+ax.set_xlim([-0.6,0.6])
+ax.set_ylim([-0.6,0.6])
+ax.set_xticks([])
+ax.set_yticks([])
+
+task_colors = {'CST': 'C0','RTT': 'C1'}
+trials_to_plot = [227,228]
+for trial_id in trials_to_plot:
+    trial = td.loc[td['trial_id']==trial_id].squeeze()
+    ax.plot(
+        trial['MC_pca'][:,0],
+        trial['MC_pca'][:,1],
+        color=task_colors[trial['task']],
+    )
+
+sns.despine(ax=ax,left=True,bottom=True)
+fig_name = src.util.format_outfile_name(td,postfix='cst_rtt_pca_plot')
+fig.savefig(os.path.join('../results/2022_sfn_poster/',fig_name+'.pdf'))
+
 #%% PCA scree plot
 def get_scree(arr):
     '''
@@ -318,8 +368,9 @@ td_scree = (
     .agg(
         compnum=('MC_rates',lambda x: 1+np.arange(x.values[0].shape[0])),
         scree=('MC_rates',lambda x: get_scree(np.row_stack(x))),
+        cumscree=('MC_rates',lambda x: np.cumsum(get_scree(np.row_stack(x)))),
     )
-    .explode(['compnum','scree'])
+    .explode(['compnum','scree','cumscree'])
     .reset_index()
 )
 participation_ratio = (
@@ -336,10 +387,11 @@ sns.lineplot(
     ax=ax,
     data=td_scree,
     x='compnum',
-    y='scree',
+    y='cumscree',
     hue='task',
     hue_order=['CST','RTT'],
 )
+ax.set_xlim([0,40])
 ax.set_ylabel('Fraction variance explained')
 ax.set_xlabel('Component #')
 # ax.set(xscale='log',yscale='log')
@@ -369,65 +421,62 @@ td_subspace_overlap = (
     ))
     .pipe(src.data.rebin_data,new_bin_size=0.05)
     .groupby('task',as_index=False)
-    .pipe(src.subspace_tools.bootstrap_subspace_overlap,signal='MC_rates',num_bootstraps=100)
-    .set_index(['task_data','task_proj','boot_id'])
-    .sort_index()
+    .pipe(src.subspace_tools.bootstrap_subspace_overlap,signal='MC_rates',num_bootstraps=100,num_dims=20)
+    .filter(items=['task_data','task_proj','boot_id','subspace_overlap','subspace_overlap_rand'])
+    .assign(within_task=(lambda x: x['task_proj']==x['task_data']))
+    .melt(
+        id_vars=['within_task','boot_id'],
+        value_vars=['subspace_overlap','subspace_overlap_rand'],
+        value_name='Subspace overlap',
+        var_name='is_control',
+    )
+    .assign(is_control=lambda x: x['is_control']=='subspace_overlap_rand')
+    .assign(Category= lambda s: np.where(s['is_control'],'Control',np.where(s['within_task'],'Within','Across')))
 )
-
 fig,ax = plt.subplots(1,1)
-sns.histplot(
+sns.barplot(
     ax=ax,
-    data=td_subspace_overlap.loc[('CST','RTT')],
-    x='subspace_overlap',
-    color='k',
-    edgecolor=None,
-)
-sns.histplot(
-    ax=ax,
-    data=td_subspace_overlap.loc[('CST','RTT')],
-    x='subspace_overlap_rand',
+    data=td_subspace_overlap,
+    x='Subspace overlap',
+    y='Category',
     color='0.7',
-    edgecolor=None,
 )
-# ax.text(15,0.3,'CST->RTT',color='k')
-ax.text(0.25,10,'Random\nmanifolds',color='0.7',fontsize=18)
-ax.set_xlim([0,1])
-ax.set_xlabel('Subspace overlap CST->RTT')
 sns.despine(ax=ax,trim=True)
+plt.tight_layout()
 fig_name = src.util.format_outfile_name(td,postfix='cst_rtt_subspace_overlap')
 fig.savefig(os.path.join('../results/2022_sfn_poster/',fig_name+'.pdf'))
 
 #%% Behavioral subspace similarity (how similar are coefficients of behavioral projection?)
-def get_beh_coefs(df):
-    '''
-    Run a linear regression from neural activity to behavior to get coefficients
-
-    Args:
-        df (pd.DataFrame): pyaldata format dataframe containing neural activity and behavior
-    Returns:
-        (np.array): array of coefficients
-    '''
-    beh_model = LinearRegression()
-
-    beh_model.fit(
-        np.row_stack(df['MC_pca']),
-        np.column_stack([
-            np.row_stack(df['hand_pos']),
-            np.row_stack(df['hand_vel']),
-        ]),
-    )
-    return beh_model.coef_
-
-beh_coefs = (
-    td
-    .pipe(pyaldata.restrict_to_interval,epoch_fun=src.util.generate_realtime_epoch_fun(
-        start_point_name='idx_goCueTime',
-        end_point_name='idx_endTime',
-    ))
-    .pipe(src.data.rebin_data,new_bin_size=0.100)
-    .groupby('task')
-    .apply(get_beh_coefs)
-)
+# def get_beh_coefs(df):
+#     '''
+#     Run a linear regression from neural activity to behavior to get coefficients
+# 
+#     Args:
+#         df (pd.DataFrame): pyaldata format dataframe containing neural activity and behavior
+#     Returns:
+#         (np.array): array of coefficients
+#     '''
+#     beh_model = LinearRegression()
+# 
+#     beh_model.fit(
+#         np.row_stack(df['MC_pca']),
+#         np.column_stack([
+#             np.row_stack(df['hand_pos']),
+#             np.row_stack(df['hand_vel']),
+#         ]),
+#     )
+#     return beh_model.coef_
+# 
+# beh_coefs = (
+#     td
+#     .pipe(pyaldata.restrict_to_interval,epoch_fun=src.util.generate_realtime_epoch_fun(
+#         start_point_name='idx_goCueTime',
+#         end_point_name='idx_endTime',
+#     ))
+#     .pipe(src.data.rebin_data,new_bin_size=0.100)
+#     .groupby('task')
+#     .apply(get_beh_coefs)
+# )
 
 #%% Neural dimensions
 td_explode = (
@@ -435,19 +484,51 @@ td_explode = (
     .assign(
         **{'Hand velocity (cm/s)': lambda x: x.apply(lambda y: y['hand_vel'][:,0],axis=1)}
     )
-    .loc[:,['trial_id','Time from go cue (s)','Time from task cue (s)','task','Motor Cortex Velocity Dim','Motor Cortex Context Dim','Hand velocity (cm/s)']]
-    .explode(['trialtime','Hand velocity (cm/s)','Motor Cortex Velocity Dim','Motor Cortex Context Dim'])
+    .filter(items=[
+        'trial_id',
+        'Time from go cue (s)',
+        'task',
+        'Motor Cortex Velocity Dim',
+        'Motor Cortex Transient Context Dim',
+        'Motor Cortex Tonic Context Dim',
+        'Hand velocity (cm/s)'
+    ])
+    .explode([
+        'Time from go cue (s)',
+        'Motor Cortex Velocity Dim',
+        'Motor Cortex Transient Context Dim',
+        'Motor Cortex Tonic Context Dim',
+        'Hand velocity (cm/s)',
+    ])
     .astype({
-        'trialtime': float,
+        'Time from go cue (s)': float,
         'Motor Cortex Velocity Dim': float,
-        'Motor Cortex Context Dim': float,
+        'Motor Cortex Transient Context Dim': float,
+        'Motor Cortex Tonic Context Dim': float,
         'Hand velocity (cm/s)': float,
     })
+    .loc[lambda df: df['Time from go cue (s)']>0]
+    # .loc[lambda df: (df['Time from go cue (s)']<0) & (df['Time from go cue (s)']>-0.5)]
+)
+
+vel_corr = (
+    td_explode
+    .groupby('task')
+    .apply(lambda df: np.corrcoef(df['Hand velocity (cm/s)'],df['Motor Cortex Velocity Dim'])[0,1])
+)
+context_corr = (
+    td_explode
+    .groupby('task')
+    .apply(lambda df: np.corrcoef(df['Hand velocity (cm/s)'],df['Motor Cortex Tonic Context Dim'])[0,1])
 )
 g = sns.pairplot(
-    data=td_explode.sample(n=250),
+    data=td_explode.sample(300),
     x_vars='Hand velocity (cm/s)',
-    y_vars=['Motor Cortex Velocity Dim','Motor Cortex Context Dim'],
+    y_vars=[
+        'Motor Cortex Velocity Dim',
+        # 'Motor Cortex Transient Context Dim',
+        'Motor Cortex Tonic Context Dim'
+    ],
     hue='task',
     hue_order=['CST','RTT'],
     kind='reg',
@@ -459,12 +540,43 @@ fig_name = src.util.format_outfile_name(td,postfix='neural_dims_v_vel')
 g.fig.savefig(os.path.join('../results/2022_sfn_poster/',fig_name+'.pdf'))
 
 #%% Context space
-avg_trial = td_explode.groupby(['trialtime','task']).mean().loc[:5].reset_index()
-task_colors={'RTT': 'tab:orange','CST': 'tab:blue'}
+td_explode = (
+    td
+    .assign(
+        **{'Hand velocity (cm/s)': lambda x: x.apply(lambda y: y['hand_vel'][:,0],axis=1)}
+    )
+    .filter(items=[
+        'trial_id',
+        'Time from go cue (s)',
+        'task',
+        'Motor Cortex Velocity Dim',
+        'Motor Cortex Transient Context Dim',
+        'Motor Cortex Tonic Context Dim',
+        'Hand velocity (cm/s)'
+    ])
+    .explode([
+        'Time from go cue (s)',
+        'Motor Cortex Velocity Dim',
+        'Motor Cortex Transient Context Dim',
+        'Motor Cortex Tonic Context Dim',
+        'Hand velocity (cm/s)',
+    ])
+    .astype({
+        'Time from go cue (s)': float,
+        'Motor Cortex Velocity Dim': float,
+        'Motor Cortex Transient Context Dim': float,
+        'Motor Cortex Tonic Context Dim': float,
+        'Hand velocity (cm/s)': float,
+    })
+    # .loc[lambda df: df['Time from go cue (s)']>0]
+    # .loc[lambda df: (df['Time from go cue (s)']<0) & (df['Time from go cue (s)']>-0.5)]
+)
+avg_trial = td_explode.groupby(['Time from go cue (s)','task']).mean().loc[-1:5].reset_index()
+task_colors={'RTT': 'C1','CST': 'C0'}
 fig,axs = plt.subplots(2,1,sharex=True,figsize=(6,6))
-for _,trial in td.groupby('task').sample(n=25).iterrows():
+for _,trial in td.groupby('task').sample(n=10).iterrows():
     axs[0].plot(
-        trial['trialtime'],
+        trial['Time from go cue (s)'],
         trial['Motor Cortex Velocity Dim'],
         color=task_colors[trial['task']],
         alpha=0.3,
@@ -472,8 +584,8 @@ for _,trial in td.groupby('task').sample(n=25).iterrows():
     )
     # put an average trace over this thing
     axs[1].plot(
-        trial['trialtime'],
-        trial['Motor Cortex Context Dim'],
+        trial['Time from go cue (s)'],
+        trial['Motor Cortex Tonic Context Dim'],
         color=task_colors[trial['task']],
         alpha=0.3,
         lw=2,
@@ -483,20 +595,21 @@ for _,trial in td.groupby('task').sample(n=25).iterrows():
     # axs.set_ylabel(f'Comp {compnum+1}')
 for task,trial in avg_trial.groupby('task'):
     axs[0].plot(
-        trial['trialtime'],
+        trial['Time from go cue (s)'],
         trial['Motor Cortex Velocity Dim'],
         color=task_colors[task],
         lw=4,
     )
     axs[1].plot(
-        trial['trialtime'],
-        trial['Motor Cortex Context Dim'],
+        trial['Time from go cue (s)'],
+        trial['Motor Cortex Tonic Context Dim'],
         color=task_colors[task],
         lw=4,
     )
 axs[0].set_ylabel('Motor Cortex\nVelocity Dim')
 axs[1].set_ylabel('Motor Cortex\nContext Dim')
 axs[-1].set_xlabel('Time from go cue (s)')
+axs[0].set_xlim([-1,5])
 sns.despine(fig=fig,trim=True)
 fig_name = src.util.format_outfile_name(td,postfix='neural_dims_v_time')
 fig.savefig(os.path.join('../results/2022_sfn_poster/',fig_name+'.pdf'))
@@ -669,45 +782,44 @@ anim_name = src.util.format_outfile_name(td,postfix=f'cst_trial_{cst_trial_id}_r
 anim.save(os.path.join('../results/2022_sfn_poster/',anim_name+'.mp4'),writer='ffmpeg',fps=30,dpi=400)
 
 # %% Animation for a single trial's behavior
+task_colors = {'CST':'C0','RTT':'C1'}
 def animate_trial_monitor(trial):
     fig = plt.figure(figsize=(10,6))
-    gs = mpl.gridspec.GridSpec(2,2,figure=fig)
-    monitor_ax = fig.add_subplot(gs[:,0])
+    gs = mpl.gridspec.GridSpec(2,2,figure=fig,width_ratios=[1,2.5])
+    monitor_ax = fig.add_subplot(gs[0,0])
     beh_ax = fig.add_subplot(gs[0,1])
     raster_ax = fig.add_subplot(gs[1,1])
 
+    trial['trialtime'] = trial['Time from go cue (s)']
+
     src.plot.plot_hand_trace(trial,ax=beh_ax)
     beh_blocker = beh_ax.add_patch(Rectangle((0,-100),10,200,color='w',zorder=100))
-    beh_ax.set_xlim([0,6])
+    beh_ax.set_xlim([-1,6])
+    beh_ax.set_ylim([-60,60])
     beh_ax.set_xticks([])
     beh_ax.set_xlabel('')
     beh_ax.set_ylabel('Hand position (cm)')
     sns.despine(ax=beh_ax,trim=True,bottom=True)
 
-    src.plot.make_trial_raster(trial,ax=raster_ax,sig='MC_spikes')
+    src.plot.make_trial_raster(trial,ax=raster_ax,sig='MC_spikes',ref_event_idx=trial['idx_goCueTime'])
     raster_blocker = raster_ax.add_patch(Rectangle((0,-100),10,200,color='w',zorder=100))
     raster_ax.set_ylim([0,88])
-    raster_ax.set_xlim([0,6])
+    raster_ax.set_xlim([-1,6])
     raster_ax.set_ylabel('Neurons')
     raster_ax.set_xlabel('Time from go cue (s)')
 
-    hand = monitor_ax.add_patch(Circle(trial['rel_hand_pos'][0,:2],5,color='r',fill=False))
-    cursor = monitor_ax.add_patch(Circle(trial['rel_cursor_pos'][0,:2], 5,zorder=100))
+    hand = monitor_ax.add_patch(Circle(trial['rel_hand_pos'][0,:2][::-1],5,color='k',fill=False))
+    cursor = monitor_ax.add_patch(Circle(trial['rel_cursor_pos'][0,:2][::-1],5,zorder=100,color='y'))
+    center_target=monitor_ax.add_patch(Rectangle((-5,-5),10,10,color='0.25'))
     if trial['task'] == 'RTT':
-        cursor.set(color='y')
         targets = [
             monitor_ax.add_patch(Rectangle(
-                targ_loc[:2]-trial['ct_location'][:2]-[5,5],
+                targ_loc[:2][::-1]-trial['ct_location'][:2][::-1]-[5,5],
                 10,
                 10,
-                color='r',
+                color='C1',
                 visible=False,
             )) for targ_loc in trial['rt_locations']
-        ]
-    else:
-        cursor.set(color='b')
-        targets=[
-            monitor_ax.add_patch(Rectangle((-5,-5),10,10,color='0.25'))
         ]
 
     monitor_ax.set_xlim([-60,60])
@@ -727,9 +839,16 @@ def animate_trial_monitor(trial):
         beh_blocker.set(x=frame_time)
         raster_blocker.set(x=frame_time)
 
-        frame_idx = int(frame_time/trial['bin_size'])
-        hand.set(center=trial['rel_hand_pos'][frame_idx,:2])
-        cursor.set(center=trial['rel_cursor_pos'][frame_idx,:2])
+        frame_idx = int(frame_time/trial['bin_size']) + trial['idx_goCueTime']
+        hand.set(center=trial['rel_hand_pos'][frame_idx,:2][::-1])
+        cursor.set(center=trial['rel_cursor_pos'][frame_idx,:2][::-1])
+
+        if frame_idx<trial['idx_pretaskHoldTime']:
+            center_target.set(color='0.25')
+        elif (trial['idx_pretaskHoldTime']<=frame_idx) and (frame_idx<trial['idx_goCueTime']):
+            center_target.set(color=task_colors[trial['task']])
+        elif frame_idx>=trial['idx_goCueTime']:
+            center_target.set(visible=False)
 
         if trial['task']=='RTT':
             idx_targ_start = trial['idx_rtgoCueTimes']
@@ -738,7 +857,13 @@ def animate_trial_monitor(trial):
             for target,on_indicator in zip(targets,on_targs):
                 target.set(visible=on_indicator)
 
-        if trial['task']=='CST' and frame_idx>trial['idx_cstEndTime']:
+        if trial['task']=='CST':
+            if (trial['idx_goCueTime']<=frame_idx) and (frame_idx<trial['idx_cstEndTime']):
+                center_target.set(visible=True)
+                center_target.set(color='0.25')
+                cursor.set(color='C0')
+            elif frame_idx>=trial['idx_cstEndTime']:
+                center_target.set(visible=False)
                 cursor.set(color='y')
     
         return [beh_blocker,raster_blocker]
@@ -756,7 +881,7 @@ def animate_trial_monitor(trial):
 
     return anim
 
-for trial_to_plot in [227,228]:
+for trial_to_plot in [71,52]:
     anim = animate_trial_monitor(td.loc[td['trial_id']==trial_to_plot].squeeze())
     anim_name = src.util.format_outfile_name(td,postfix=f'trial_{trial_to_plot}_monitor_anim')
     anim.save(os.path.join('../results/2022_sfn_poster/',anim_name+'.mp4'),writer='ffmpeg',fps=30,dpi=400)
