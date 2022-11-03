@@ -18,13 +18,13 @@ x Mean FR scatterplot between CST and RTT for all neurons
 x L/R selectivity scatterplot between CST and RTT for all neurons
 x Scree plots for CST and RTT
 x Subspace overlap between CST and RTT movement period
-- Context subspace dimensions
-- Separability traces along each dimension? (classification accuracy of simple threshold?)
-- sensorimotor plots for delayed LTI control
-- sensorimotor plot for example CST trial
-~ Behavioral subspace overlap between CST and RTT
+x Context subspace dimensions
 - Within vs. across velocity decoding
-- Velocity decoding performance of context subspace vs random subspaces
+~ Velocity decoding performance of context subspace vs random subspaces
+~ Separability traces along each dimension? (classification accuracy of simple threshold?)
+~ sensorimotor plots for delayed LTI control
+~ sensorimotor plot for example CST trial
+~ Behavioral subspace overlap between CST and RTT
 '''
 
 #%% Setup
@@ -37,6 +37,7 @@ import os
 from sklearn.decomposition import PCA
 from sklearn.linear_model import LinearRegression
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
+from sklearn.model_selection import GroupShuffleSplit
 
 from ipywidgets import interact
 import matplotlib.pyplot as plt
@@ -478,6 +479,129 @@ fig.savefig(os.path.join('../results/2022_sfn_poster/',fig_name+'.pdf'))
 #     .apply(get_beh_coefs)
 # )
 
+#%% Velocity cross predictions
+def get_test_labels(df):
+    gss = GroupShuffleSplit(n_splits=1,test_size=0.25)
+    _,test = next(gss.split(
+        df['MC_pca'],
+        df['True velocity'],
+        groups=df['trial_id'],
+    ))
+    return np.isin(np.arange(df.shape[0]),test)
+
+def fit_models(df):
+    # individual models
+    models = {}
+    for task in df['task'].unique():
+        models[task] = LinearRegression()
+        train_df = df.loc[(~df['Test set']) & (df['task']==task)]
+        models[task].fit(
+            np.row_stack(train_df['MC_pca']),
+            train_df['True velocity'],
+        )
+
+    # joint models
+    models['Joint'] = LinearRegression()
+    train_df = df.loc[~df['Test set']]
+    models['Joint'].fit(
+        np.row_stack(train_df['MC_pca']),
+        train_df['True velocity'],
+    )
+
+    return models
+
+def model_predict(df,models):
+    ret_df = df.copy()
+    for model_name,model in models.items():
+        ret_df = ret_df.assign(**{
+            f'{model_name} predicted': model.predict(np.row_stack(ret_df['MC_pca']))
+        })
+    return ret_df
+
+def score_models(df,models):
+    scores = pd.Series(index=pd.MultiIndex.from_product(
+        [df['task'].unique(),models.keys()],
+        names=['Test data','Train data']
+    ))
+    for task in df['task'].unique():
+        for model_name, model in models.items():
+            test_df = df.loc[df['Test set'] & (df['task']==task)]
+            scores[(task,model_name)] = model.score(np.row_stack(test_df['MC_pca']),test_df['True velocity'])
+    
+    return scores
+
+td_train_test = (
+    td
+    .assign(
+        **{'True velocity': lambda df: df.apply(lambda s: s['hand_vel'][:,0],axis=1)}
+    )
+    .filter(items=[
+        'trial_id',
+        'Time from go cue (s)',
+        'task',
+        'True velocity',
+        'MC_pca',
+    ])
+    .explode([
+        'Time from go cue (s)',
+        'True velocity',
+        'MC_pca',
+    ])
+    .astype({
+        'Time from go cue (s)': float,
+        'True velocity': float,
+    })
+    .assign(**{'Test set': lambda df: get_test_labels(df)})
+)
+
+models = fit_models(td_train_test)
+scores = score_models(td_train_test,models)
+td_pred = (
+    td_train_test
+    .pipe(model_predict,models)
+    .melt(
+        id_vars=['trial_id','Time from go cue (s)','task'],
+        value_vars=['True velocity','CST predicted','RTT predicted','Joint predicted'],
+        var_name='Model',
+        value_name='Hand velocity (cm/s)',
+    )
+)
+
+trials_to_plot=[71,52]
+g=sns.relplot(
+    data=td_pred.loc[np.isin(td_pred['trial_id'],trials_to_plot)],
+    x='Time from go cue (s)',
+    y='Hand velocity (cm/s)',
+    hue='Model',
+    hue_order=['True velocity','CST predicted','RTT predicted','Joint predicted'],
+    palette=['k','C0','C1','0.5'],
+    kind='line',
+    row='trial_id',
+    row_order=trials_to_plot,
+    height=4,
+    aspect=2,
+)
+g.axes[0,0].set_yticks([-200,0,200])
+g.axes[0,0].set_xticks([0,2,4,6])
+sns.despine(fig=g.fig,trim=True)
+
+fig_name = src.util.format_outfile_name(td,postfix='cst71_rtt52_vel_pred')
+g.fig.savefig(os.path.join('../results/2022_sfn_poster/',fig_name+'.pdf'))
+
+fig,ax = plt.subplots(1,1)
+sns.heatmap(
+    ax=ax,
+    data=scores.unstack(),
+    vmin=0,
+    vmax=1,
+    annot=True,
+    annot_kws={'fontsize': 21},
+    cmap='viridis',
+)
+fig_name = src.util.format_outfile_name(td,postfix='cst_rtt_vel_pred_scores')
+fig.savefig(os.path.join('../results/2022_sfn_poster/',fig_name+'.pdf'))
+
+
 #%% Neural dimensions
 td_explode = (
     td
@@ -885,5 +1009,101 @@ for trial_to_plot in [71,52]:
     anim = animate_trial_monitor(td.loc[td['trial_id']==trial_to_plot].squeeze())
     anim_name = src.util.format_outfile_name(td,postfix=f'trial_{trial_to_plot}_monitor_anim')
     anim.save(os.path.join('../results/2022_sfn_poster/',anim_name+'.mp4'),writer='ffmpeg',fps=30,dpi=400)
-# %%
 
+# %% animate just behavior, no raster
+task_colors = {'CST':'C0','RTT':'C1'}
+def animate_trial_monitor_no_raster(trial):
+    fig = plt.figure(figsize=(10,3.5))
+    gs = mpl.gridspec.GridSpec(1,2,figure=fig,width_ratios=[1,2.5])
+    monitor_ax = fig.add_subplot(gs[0,0])
+    beh_ax = fig.add_subplot(gs[0,1])
+
+    trial['trialtime'] = trial['Time from go cue (s)']
+
+    src.plot.plot_hand_trace(trial,ax=beh_ax)
+    beh_blocker = beh_ax.add_patch(Rectangle((0,-100),10,200,color='w',zorder=100))
+    beh_ax.set_xlim([-1,6])
+    beh_ax.set_ylim([-60,60])
+    beh_ax.set_yticks([-50,50])
+    beh_ax.set_xticks([0,6])
+    beh_ax.set_xlabel('Time from go cue (s)')
+    beh_ax.set_ylabel('Hand position (cm)')
+    sns.despine(ax=beh_ax,trim=True)
+
+    hand = monitor_ax.add_patch(Circle(trial['rel_hand_pos'][0,:2][::-1],5,color='k',fill=False))
+    cursor = monitor_ax.add_patch(Circle(trial['rel_cursor_pos'][0,:2][::-1],5,zorder=100,color='y'))
+    center_target=monitor_ax.add_patch(Rectangle((-5,-5),10,10,color='0.25'))
+    if trial['task'] == 'RTT':
+        targets = [
+            monitor_ax.add_patch(Rectangle(
+                targ_loc[:2][::-1]-trial['ct_location'][:2][::-1]-[5,5],
+                10,
+                10,
+                color='C1',
+                visible=False,
+            )) for targ_loc in trial['rt_locations']
+        ]
+
+    monitor_ax.set_xlim([-60,60])
+    monitor_ax.set_ylim([-60,60])
+    monitor_ax.set_xticks([])
+    monitor_ax.set_yticks([])
+    sns.despine(ax=monitor_ax,left=True,bottom=True)
+
+    plt.tight_layout()
+
+    def init_plot():
+        beh_blocker.set(x=0)
+        return [beh_blocker]
+
+    def animate(frame_time):
+        beh_blocker.set(x=frame_time)
+
+        frame_idx = int(frame_time/trial['bin_size']) + trial['idx_goCueTime']
+        hand.set(center=trial['rel_hand_pos'][frame_idx,:2][::-1])
+        cursor.set(center=trial['rel_cursor_pos'][frame_idx,:2][::-1])
+
+        if frame_idx<trial['idx_pretaskHoldTime']:
+            center_target.set(color='0.25')
+        elif (trial['idx_pretaskHoldTime']<=frame_idx) and (frame_idx<trial['idx_goCueTime']):
+            center_target.set(color=task_colors[trial['task']])
+        elif frame_idx>=trial['idx_goCueTime']:
+            center_target.set(visible=False)
+
+        if trial['task']=='RTT':
+            idx_targ_start = trial['idx_rtgoCueTimes']
+            idx_targ_end = trial['idx_rtHoldTimes']
+            on_targs = (idx_targ_start<frame_idx) & (frame_idx<idx_targ_end)
+            for target,on_indicator in zip(targets,on_targs):
+                target.set(visible=on_indicator)
+
+        if trial['task']=='CST':
+            if (trial['idx_goCueTime']<=frame_idx) and (frame_idx<trial['idx_cstEndTime']):
+                center_target.set(visible=True)
+                center_target.set(color='0.25')
+                cursor.set(color='C0')
+            elif frame_idx>=trial['idx_cstEndTime']:
+                center_target.set(visible=False)
+                cursor.set(color='y')
+    
+        return [beh_blocker]
+
+    frame_interval = 30 #ms
+    frames = np.arange(trial['trialtime'][0],trial['trialtime'][-1],frame_interval*1e-3)
+    anim = animation.FuncAnimation(
+        fig,
+        animate,
+        init_func=init_plot,
+        frames = frames,
+        interval = frame_interval,
+        blit = True,
+    )
+
+    return anim
+
+for trial_to_plot in [52,71]:
+    anim = animate_trial_monitor_no_raster(td.loc[td['trial_id']==trial_to_plot].squeeze())
+    anim_name = src.util.format_outfile_name(td,postfix=f'trial_{trial_to_plot}_monitor_anim')
+    anim.save(os.path.join('../results/2022_sfn_poster/',anim_name+'.mp4'),writer='ffmpeg',fps=30,dpi=400)
+
+# %%
