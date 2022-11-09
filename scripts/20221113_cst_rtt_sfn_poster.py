@@ -288,7 +288,12 @@ td_mean_fr = (
         'lr_selectivity': src.single_neuron_analysis.get_lr_selectivity(
             np.row_stack(x['Hand velocity (cm/s)']),
             np.row_stack(x['MC_spikes'])/0.05,
-        )
+        ),
+        # 'is_tuned': src.single_neuron_analysis.check_tuning(
+        #     np.row_stack(x['Hand velocity (cm/s)']),
+        #     np.row_stack(x['MC_spikes'])/0.05,
+        #     num_shuffles=500,
+        # )
     }))
 )
 
@@ -303,9 +308,10 @@ ax.set_xlabel('CST mean firing rate (Hz)')
 ax.set_ylabel('RTT mean firing rate (Hz)')
 sns.despine(ax=ax,trim=True)
 fig_name = src.util.format_outfile_name(td,postfix='cst_rtt_mean_fr_comparison')
-fig.savefig(os.path.join('../results/2022_sfn_poster/',fig_name+'.pdf'))
+# fig.savefig(os.path.join('../results/2022_sfn_poster/',fig_name+'.pdf'))
 
 fig,ax = plt.subplots(1,1,figsize=(6,6))
+# tuned_in_either = td_mean_fr.loc['CST','is_tuned'] | td_mean_fr.loc['RTT','is_tuned']
 ax.plot([0,0],[-0.005,0.005],'-k')
 ax.plot([-0.005,0.005],[0,0],'-k')
 ax.plot([-0.005,0.005],[-0.005,0.005],'--k')
@@ -318,7 +324,39 @@ ax.set_xlabel('CST rightward tuning (Hz/(cm/s))')
 ax.set_ylabel('RTT rightward tuning (Hz/(cm/s))')
 sns.despine(ax=ax,trim=True)
 fig_name = src.util.format_outfile_name(td,postfix='cst_rtt_lr_selectivity_comparison')
-fig.savefig(os.path.join('../results/2022_sfn_poster/',fig_name+'.pdf'))
+# fig.savefig(os.path.join('../results/2022_sfn_poster/',fig_name+'.pdf'))
+
+#%% small firing rate vs. velocity plot for example neuron
+neuron_idx = 25
+td_example_neuron = (
+    td
+    .pipe(src.data.rebin_data,new_bin_size=0.100)
+    .assign(**{
+        'Hand velocity (cm/s)': lambda x: x.apply(lambda y: y['hand_vel'][:,0],axis=1),
+        'Firing rate (Hz)': lambda x: x.apply(lambda y: y['MC_spikes'][:,neuron_idx]/0.100,axis=1),
+    })
+    .filter(items=[
+        'trial_id',
+        'Time from go cue (s)',
+        'task',
+        'Hand velocity (cm/s)',
+        'Firing rate (Hz)',
+    ])
+    .explode(['Time from go cue (s)','Hand velocity (cm/s)','Firing rate (Hz)'])
+    .astype({
+        'Time from go cue (s)': float,
+        'Hand velocity (cm/s)': float,
+        'Firing rate (Hz)': float,
+    })
+    .loc[lambda df: df['Time from go cue (s)']>=0]
+)
+sns.lmplot(
+    data=td_example_neuron,
+    x='Firing rate (Hz)',
+    y='Hand velocity (cm/s)',
+    hue='task',
+    logx=True,
+)
 
 #%% PCA plots
 fig, ax = plt.subplots(1,1,figsize=(6,6))
@@ -596,7 +634,7 @@ sns.heatmap(
     vmax=1,
     annot=True,
     annot_kws={'fontsize': 21},
-    cmap='viridis',
+    cmap='gray',
 )
 fig_name = src.util.format_outfile_name(td,postfix='cst_rtt_vel_pred_scores')
 fig.savefig(os.path.join('../results/2022_sfn_poster/',fig_name+'.pdf'))

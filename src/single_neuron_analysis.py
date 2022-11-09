@@ -218,6 +218,32 @@ def get_lr_selectivity(hand_vel,neural_data):
 
     return lr_sensitivity
 
+def check_tuning(hand_vel,neural_data,num_shuffles=1000):
+    '''
+    Checks whether neural activity is tuned to left/right movements using a shuffle
+    control distribution
+
+    Arguments:
+        hand_vel (np.array): array of horizontal hand velocities, shape: (n_time x 1)
+        neural_data (np.array): neural signal to use for calculating selectivity, shape: (n_time x n_neurons)
+
+    Returns:
+        numpy array: array of left/right selectivity per neuron in trial_data[signal]
+    '''
+    true_lr_sensitivity = get_lr_selectivity(hand_vel,neural_data)
+
+    rng = np.random.default_rng()
+    shuffle_lr_sensitivity = np.abs(
+        np.column_stack([
+            get_lr_selectivity(rng.permutation(hand_vel,axis=0),neural_data)
+            for _ in range(num_shuffles)
+        ])
+    )
+
+    shuffle_bound = np.percentile(shuffle_lr_sensitivity,95,axis=1)
+    
+    return np.abs(true_lr_sensitivity) > shuffle_bound
+
 def plot_task_neural_lr_selectivity(lr_selectivity_table):
     '''
     Takes a table of left/right selectivity per neuron, separated by array, task (CO or CST)
