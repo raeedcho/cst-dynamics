@@ -2,6 +2,8 @@ lfads_prep:
   window_len: 60
   overlap: 20
   bin_size: 0.010
+  keep_unsorted: True
+  verbose: True
 dynamics_analysis:
   num_dims: 10
   bin_size: 0.030

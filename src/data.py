@@ -154,6 +154,15 @@ def remove_correlated_units(td):
             & np.in1d(unit_guide[:, 1], corr_units[:, 1])
         )
         td = mask_neural_data(td, 'M1', ~bad_units)
+    elif td.loc[td.index[0], "session_date"] == pd.to_datetime("2022/07/20"):
+        corr_units = np.array([[71, 1], [73, 1]])
+        for array in ['M1','PMd','MC']:
+            unit_guide = td.loc[td.index[0],f'{array}_unit_guide']
+            bad_units = (
+                np.in1d(unit_guide[:, 0], corr_units[:, 0])
+                & np.in1d(unit_guide[:, 1], corr_units[:, 1])
+            )
+            td = mask_neural_data(td,array, ~bad_units)
 
     return td
 
