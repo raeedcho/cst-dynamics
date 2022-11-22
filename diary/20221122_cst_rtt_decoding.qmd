@@ -1,0 +1,191 @@
+---
+title: Comparing velocity decoding across CST and RTT
+author: Raeed Chowdhury
+date: 2022-11-22
+format:
+  html:
+    toc: true
+    toc-location: left
+    cap-location: margin
+    code-fold: true
+    execute: true
+    self-contained: false
+jupyter: python3
+---
+
+## Setup
+
+For my SfN poster, I did a quick analysis on across vs. within task decoding and found a strangely interesting result. Training a joint decoder on CST and RTT data together could predict pretty much equally as well as decoders trained and tested within task for both CST and RTT--that's nice but somewhat expected considering how similar the kinematics of the tasks are. But the interesting part comes in when we consider across-task decoders: decoders trained in one task and tested in the other. CST-trained decoders do almost as well as the joint decoder at predicting RTT hand velocity. But an RTT-trained decoder does poorly at predicting CST hand velocity. It seems like there's a wider range of neural dimensions that are predictive of hand velocity in RTT than in CST--or that CST is somehow a superset of RTT in neural space. This does fit the narrative that neural activity in CST might have something to do with feedback processing that the neural activity in RTT doesn't have, so it's something to explore.
+
+```{python}
+import src
+import pyaldata
+import pandas as pd
+import numpy as np
+import os
+
+from sklearn.decomposition import PCA
+from sklearn.linear_model import LinearRegression
+from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
+from sklearn.model_selection import GroupShuffleSplit
+
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_pdf import PdfPages
+from matplotlib.gridspec import GridSpec
+from matplotlib.patches import Rectangle,Circle
+import matplotlib.animation as animation
+import matplotlib as mpl
+import seaborn as sns
+
+mpl.rcParams['pdf.fonttype'] = 42
+sns.set_context('talk')
+```
+```{python}
+params = {
+    'verbose': True,
+    'keep_unsorted': True,
+    'bin_size': 0.010,
+    'firing_rates_func': lambda td: pyaldata.add_firing_rates(td,method='smooth',std=0.05,backend='convolve'),
+    'epoch_fun': src.util.generate_realtime_epoch_fun(
+        start_point_name='idx_ctHoldTime',
+        end_point_name='idx_endTime',
+    ),
+}
+
+filename = '../data/trial_data/Prez_20220722_RTTCST_TD.mat'
+td = (
+    src.data.load_clean_data(filename,**params)
+    .query('task=="RTT" | task=="CST"')
+    .astype({'idx_pretaskHoldTime': int})
+    .pipe(pyaldata.soft_normalize_signal,signals=['M1_rates','PMd_rates','MC_rates'])
+    .pipe(pyaldata.dim_reduce,PCA(n_components=15),'M1_rates','M1_pca')
+    .pipe(pyaldata.dim_reduce,PCA(n_components=15),'PMd_rates','PMd_pca')
+    .pipe(pyaldata.dim_reduce,PCA(n_components=15),'MC_rates','MC_pca')
+)
+```
+
+## Decoder testing
+
+```{python}
+def get_test_labels(df):
+    gss = GroupShuffleSplit(n_splits=1,test_size=0.25)
+    _,test = next(gss.split(
+        df['MC_pca'],
+        df['True velocity'],
+        groups=df['trial_id'],
+    ))
+    return np.isin(np.arange(df.shape[0]),test)
+
+def fit_models(df):
+    # individual models
+    models = {}
+    for task in df['task'].unique():
+        models[task] = LinearRegression()
+        train_df = df.loc[(~df['Test set']) & (df['task']==task)]
+        models[task].fit(
+            np.row_stack(train_df['MC_pca']),
+            train_df['True velocity'],
+        )
+
+    # joint models
+    models['Joint'] = LinearRegression()
+    train_df = df.loc[~df['Test set']]
+    models['Joint'].fit(
+        np.row_stack(train_df['MC_pca']),
+        train_df['True velocity'],
+    )
+
+    return models
+
+def model_predict(df,models):
+    ret_df = df.copy()
+    for model_name,model in models.items():
+        ret_df = ret_df.assign(**{
+            f'{model_name} predicted': model.predict(np.row_stack(ret_df['MC_pca']))
+        })
+    return ret_df
+
+def score_models(df,models):
+    scores = pd.Series(index=pd.MultiIndex.from_product(
+        [df['task'].unique(),models.keys()],
+        names=['Test data','Train data']
+    ))
+    for task in df['task'].unique():
+        for model_name, model in models.items():
+            test_df = df.loc[df['Test set'] & (df['task']==task)]
+            scores[(task,model_name)] = model.score(np.row_stack(test_df['MC_pca']),test_df['True velocity'])
+    
+    return scores
+
+td_train_test = (
+    td
+    .assign(
+        **{'True velocity': lambda df: df.apply(lambda s: s['hand_vel'][:,0],axis=1)}
+    )
+    .filter(items=[
+        'trial_id',
+        'Time from go cue (s)',
+        'task',
+        'True velocity',
+        'MC_pca',
+    ])
+    .explode([
+        'Time from go cue (s)',
+        'True velocity',
+        'MC_pca',
+    ])
+    .astype({
+        'Time from go cue (s)': float,
+        'True velocity': float,
+    })
+    .assign(**{'Test set': lambda df: get_test_labels(df)})
+)
+
+models = fit_models(td_train_test)
+scores = score_models(td_train_test,models)
+td_pred = (
+    td_train_test
+    .pipe(model_predict,models)
+    .melt(
+        id_vars=['trial_id','Time from go cue (s)','task'],
+        value_vars=['True velocity','CST predicted','RTT predicted','Joint predicted'],
+        var_name='Model',
+        value_name='Hand velocity (cm/s)',
+    )
+)
+
+# trials_to_plot=[71,52]
+trials_to_plot=td_pred.groupby('task').sample(n=1)['trial_id']
+g=sns.relplot(
+    data=td_pred.loc[np.isin(td_pred['trial_id'],trials_to_plot)],
+    x='Time from go cue (s)',
+    y='Hand velocity (cm/s)',
+    hue='Model',
+    hue_order=['True velocity','CST predicted','RTT predicted','Joint predicted'],
+    palette=['k','C0','C1','0.5'],
+    kind='line',
+    row='trial_id',
+    row_order=trials_to_plot,
+    height=4,
+    aspect=2,
+)
+g.axes[0,0].set_yticks([-200,0,200])
+g.axes[0,0].set_xticks([0,2,4,6])
+sns.despine(fig=g.fig,trim=True)
+
+# fig_name = src.util.format_outfile_name(td,postfix='cst71_rtt52_vel_pred')
+# g.fig.savefig(os.path.join('../results/2022_sfn_poster/',fig_name+'.pdf'))
+
+fig,ax = plt.subplots(1,1)
+sns.heatmap(
+    ax=ax,
+    data=scores.unstack(),
+    vmin=0,
+    vmax=1,
+    annot=True,
+    annot_kws={'fontsize': 21},
+    cmap='gray',
+)
+# fig_name = src.util.format_outfile_name(td,postfix='cst_rtt_vel_pred_scores')
+# fig.savefig(os.path.join('../results/2022_sfn_poster/',fig_name+'.pdf'))
+```
