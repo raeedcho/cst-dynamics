@@ -28,7 +28,8 @@ def load_clean_data(
         .assign(
             date_time=lambda x: pd.to_datetime(x['date_time']),
             session_date=lambda x: pd.DatetimeIndex(x['date_time']).normalize(),
-            idx_ctHoldTime= lambda x: x['idx_ctHoldTime'].map(lambda y: y[-1] if y.size>1 else y),
+            idx_ctHoldTime= lambda x: x['idx_ctHoldTime'].map(lambda y: y[-1] if type(y) is np.ndarray and y.size>1 else y),
+            idx_goCueTime= lambda x: x['idx_goCueTime'].map(lambda y: y[0] if type(y) is np.ndarray and y.size>1 else y),
         )
         .pipe(remove_aborts, verbose=verbose)
         .astype({
@@ -58,7 +59,7 @@ def load_clean_data(
         )
         .pipe(rebin_data,new_bin_size=bin_size)
         .pipe(add_trial_time,ref_event='idx_goCueTime',column_name='Time from go cue (s)')
-        .pipe(add_trial_time,ref_event='idx_pretaskHoldTime',column_name='Time from task cue (s)')
+        # .pipe(add_trial_time,ref_event='idx_pretaskHoldTime',column_name='Time from task cue (s)')
     )
 
     return td
@@ -68,7 +69,7 @@ def remove_aborts(td,verbose=False):
     """
     Remove trials that were aborted
     """
-    abort_idx = np.isnan(td["idx_goCueTime"])
+    abort_idx = pd.isna(td["idx_goCueTime"])
     td = td[~abort_idx]
     if verbose:
         print(f"Removed {sum(abort_idx)} trials that monkey aborted")
@@ -107,11 +108,11 @@ def trim_nans(trial_data, ref_signals=["rel_hand_pos"]):
         last_viable_time = np.nonzero(~nan_times)[0][-1]
         return slice(first_viable_time, last_viable_time + 1)
 
-    td_trimmed = pyaldata.restrict_to_interval(trial_data, epoch_fun=epoch_fun)
+    td_trimmed = pyaldata.restrict_to_interval(trial_data,epoch_fun=epoch_fun,reset_index=False)
     for trial_id in td_trimmed.index:
-        td_trimmed.loc[trial_id, "idx_endTime"] = td_trimmed.loc[
-            trial_id, "M1_spikes"
-        ].shape[0]
+        td_trimmed.loc[trial_id, "idx_endTime"] = np.column_stack(
+            [td_trimmed.loc[trial_id,sig] for sig in ref_signals]
+            ).shape[0]
 
     return td_trimmed
 
