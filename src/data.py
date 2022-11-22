@@ -4,7 +4,14 @@ import numpy as np
 import scipy
 
 
-def load_clean_data(filepath, verbose=False, keep_unsorted=False):
+def load_clean_data(
+    filename,
+    verbose=False,
+    keep_unsorted=False,
+    bin_size=0.010,
+    firing_rates_func= lambda td: pyaldata.add_firing_rates(td,method='smooth',std=0.05,backend='convolve'),
+    epoch_fun = lambda _: slice(None),
+    ):
     """
     Loads and cleans COCST trial data, given a file query
     inputs:
@@ -13,16 +20,45 @@ def load_clean_data(filepath, verbose=False, keep_unsorted=False):
     TODO: set up an initial script to move data into the 'data' folder of the project (maybe with DVC)
     """
     td = (
-        pyaldata.mat2dataframe(filepath, True, "trial_data")
+        pyaldata.mat2dataframe(
+            filename,
+            shift_idx_fields=True,
+            td_name='trial_data'
+        )
         .assign(
             date_time=lambda x: pd.to_datetime(x['date_time']),
-            session_date=lambda x: pd.DatetimeIndex(x['date_time']).normalize()
+            session_date=lambda x: pd.DatetimeIndex(x['date_time']).normalize(),
+            idx_ctHoldTime= lambda x: x['idx_ctHoldTime'].map(lambda y: y[-1] if y.size>1 else y),
         )
         .pipe(remove_aborts, verbose=verbose)
+        .astype({
+            'idx_ctHoldTime': int,
+            # 'idx_pretaskHoldTime': int,
+            'idx_goCueTime': int,
+        })
         .pipe(remove_artifact_trials, verbose=verbose)
-        .pipe(filter_unit_guides, filter_func=lambda guide: guide[:,1] > (0 if keep_unsorted else 1))
+        .pipe(
+            filter_unit_guides,
+            filter_func=lambda guide: guide[:,1] > (0 if keep_unsorted else 1)
+        )
         .pipe(remove_correlated_units)
-        .pipe(remove_all_low_firing_neurons, threshold=0.1, divide_by_bin_size=True, verbose=verbose)
+        .pipe(
+            remove_all_low_firing_neurons,
+            threshold=0.1,
+            divide_by_bin_size=True,
+            verbose=verbose
+        )
+        .pipe(firing_rates_func)
+        .pipe(trim_nans, ref_signals=['rel_hand_pos'])
+        .pipe(fill_kinematic_signals)
+        .pipe(
+            pyaldata.restrict_to_interval,
+            epoch_fun = epoch_fun,
+            warn_per_trial=True,
+        )
+        .pipe(rebin_data,new_bin_size=bin_size)
+        .pipe(add_trial_time,ref_event='idx_goCueTime',column_name='Time from go cue (s)')
+        .pipe(add_trial_time,ref_event='idx_pretaskHoldTime',column_name='Time from task cue (s)')
     )
 
     return td

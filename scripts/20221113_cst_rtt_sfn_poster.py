@@ -51,74 +51,77 @@ import seaborn as sns
 mpl.rcParams['pdf.fonttype'] = 42
 sns.set_context('talk')
 
-#! %load_ext autoreload
-#! %autoreload 2
-
 params = {
     'verbose': True,
     'keep_unsorted': True,
     'bin_size': 0.010,
+    'firing_rates_func': lambda td: pyaldata.add_firing_rates(td,method='smooth',std=0.05,backend='convolve'),
+    'epoch_fun': src.util.generate_realtime_epoch_fun(
+        start_point_name='idx_ctHoldTime',
+        end_point_name='idx_endTime',
+    ),
 }
 
 filename = '../data/trial_data/Prez_20220720_RTTCSTCO_TD.mat'
 td = (
-    pyaldata.mat2dataframe(
+    src.data.load_clean_data(
         filename,
-        shift_idx_fields=True,
-        td_name='trial_data'
-    )
-    .assign(
-        date_time=lambda x: pd.to_datetime(x['date_time']),
-        session_date=lambda x: pd.DatetimeIndex(x['date_time']).normalize()
+        **params
     )
     .query('task=="RTT" | task=="CST"')
-    .pipe(src.data.remove_aborts, verbose=params['verbose'])
-    .pipe(src.data.remove_artifact_trials, verbose=params['verbose'])
-    .pipe(
-        src.data.filter_unit_guides,
-        filter_func=lambda guide: guide[:,1] > (0 if params['keep_unsorted'] else 1)
-    )
-    .pipe(src.data.remove_correlated_units)
-    .pipe(
-        src.data.remove_all_low_firing_neurons,
-        threshold=0.1,
-        divide_by_bin_size=True,
-        verbose=params['verbose']
-    )
-    .pipe(pyaldata.add_firing_rates,method='smooth', std=0.05, backend='convolve')
-    .pipe(src.data.trim_nans, ref_signals=['rel_hand_pos'])
-    .pipe(src.data.fill_kinematic_signals)
-    .pipe(src.data.rebin_data,new_bin_size=params['bin_size'])
+    .astype({'idx_pretaskHoldTime': int})
     .pipe(pyaldata.soft_normalize_signal,signals=['M1_rates','PMd_rates','MC_rates'])
     .pipe(pyaldata.dim_reduce,PCA(n_components=15),'M1_rates','M1_pca')
     .pipe(pyaldata.dim_reduce,PCA(n_components=15),'PMd_rates','PMd_pca')
     .pipe(pyaldata.dim_reduce,PCA(n_components=15),'MC_rates','MC_pca')
-    .assign(idx_ctHoldTime= lambda x: x['idx_ctHoldTime'].map(lambda y: y[-1] if y.size>1 else y))
-    .astype({
-        'idx_ctHoldTime': int,
-        'idx_pretaskHoldTime': int,
-        'idx_goCueTime': int,
-    })
-    .pipe(
-        pyaldata.restrict_to_interval,
-        epoch_fun = src.util.generate_realtime_epoch_fun(
-            start_point_name='idx_ctHoldTime',
-            end_point_name='idx_endTime',
-        ),
-        warn_per_trial=True,
-    )
-    .pipe(src.data.add_trial_time,ref_event='idx_goCueTime',column_name='Time from go cue (s)')
-    .pipe(src.data.add_trial_time,ref_event='idx_pretaskHoldTime',column_name='Time from task cue (s)')
 )
+# td = (
+#     pyaldata.mat2dataframe(
+#         filename,
+#         shift_idx_fields=True,
+#         td_name='trial_data'
+#     )
+#     .assign(
+#         date_time=lambda x: pd.to_datetime(x['date_time']),
+#         session_date=lambda x: pd.DatetimeIndex(x['date_time']).normalize()
+#     )
+#     .query('task=="RTT" | task=="CST"')
+#     .pipe(src.data.remove_aborts, verbose=params['verbose'])
+#     .pipe(src.data.remove_artifact_trials, verbose=params['verbose'])
+#     .pipe(
+#         src.data.filter_unit_guides,
+#         filter_func=lambda guide: guide[:,1] > (0 if params['keep_unsorted'] else 1)
+#     )
+#     .pipe(src.data.remove_correlated_units)
+#     .pipe(
+#         src.data.remove_all_low_firing_neurons,
+#         threshold=0.1,
+#         divide_by_bin_size=True,
+#         verbose=params['verbose']
+#     )
+#     .pipe(pyaldata.add_firing_rates,method='smooth', std=0.05, backend='convolve')
+#     .pipe(src.data.trim_nans, ref_signals=['rel_hand_pos'])
+#     .pipe(src.data.fill_kinematic_signals)
+#     .pipe(src.data.rebin_data,new_bin_size=params['bin_size'])
+#     .pipe(pyaldata.soft_normalize_signal,signals=['M1_rates','PMd_rates','MC_rates'])
+#     .pipe(pyaldata.dim_reduce,PCA(n_components=15),'M1_rates','M1_pca')
+#     .pipe(pyaldata.dim_reduce,PCA(n_components=15),'PMd_rates','PMd_pca')
+#     .pipe(pyaldata.dim_reduce,PCA(n_components=15),'MC_rates','MC_pca')
+#     .assign(idx_ctHoldTime= lambda x: x['idx_ctHoldTime'].map(lambda y: y[-1] if y.size>1 else y))
+#     .astype({
+#         'idx_ctHoldTime': int,
+#         'idx_pretaskHoldTime': int,
+#         'idx_goCueTime': int,
+#     })
 #     .pipe(
 #         pyaldata.restrict_to_interval,
 #         epoch_fun = src.util.generate_realtime_epoch_fun(
-#             start_point_name='idx_goCueTime',
-#             rel_start_time=-0.8,
+#             start_point_name='idx_ctHoldTime',
 #             end_point_name='idx_endTime',
 #         ),
 #         warn_per_trial=True,
 #     )
+# )
 
 # fit velocity and context models
 vel_model = LinearRegression(fit_intercept=False)
@@ -397,6 +400,7 @@ def get_scree(arr):
     model = PCA()
     model.fit(arr)
     return model.explained_variance_ratio_
+    # return model.explained_variance_
 
 td_scree = (
     td
