@@ -62,7 +62,7 @@ params = {
     ),
 }
 
-filename = '../data/trial_data/Prez_20220720_RTTCSTCO_TD.mat'
+filename = '../data/trial_data/Prez_20220720_RTTCST_TD.mat'
 td = (
     src.data.load_clean_data(
         filename,
@@ -74,6 +74,15 @@ td = (
     .pipe(pyaldata.dim_reduce,PCA(n_components=15),'M1_rates','M1_pca')
     .pipe(pyaldata.dim_reduce,PCA(n_components=15),'PMd_rates','PMd_pca')
     .pipe(pyaldata.dim_reduce,PCA(n_components=15),'MC_rates','MC_pca')
+    .assign(
+        beh_sig=lambda x: x.apply(
+            lambda y: np.column_stack([
+                y['rel_hand_pos'][:,[0,1,2]],
+                y['hand_vel'][:,:],
+                y['hand_acc'][:,:],
+            ]),axis=1
+        )
+    )
 )
 # td = (
 #     pyaldata.mat2dataframe(
@@ -127,6 +136,7 @@ td = (
 vel_model = LinearRegression(fit_intercept=False)
 transient_context_model = LinearDiscriminantAnalysis()
 tonic_context_model = LinearDiscriminantAnalysis()
+tonic_beh_context_model = LinearDiscriminantAnalysis()
 
 td_models = src.data.rebin_data(td,new_bin_size=0.100)
 
@@ -143,6 +153,10 @@ tonic_context_model.fit(
     np.row_stack(td_models.apply(lambda x: x['MC_pca'][x['idx_goCueTime']+20,:],axis=1)),
     td_models['task'],
 )
+tonic_beh_context_model.fit(
+    np.row_stack(td_models.apply(lambda x: x['beh_sig'][x['idx_goCueTime']+20,:],axis=1)),
+    td_models['task'],
+)
 
 def norm_vec(vec):
     return vec/np.linalg.norm(vec)
@@ -150,6 +164,7 @@ def norm_vec(vec):
 td['Motor Cortex Velocity Dim'] = [(sig @ norm_vec(vel_model.coef_).squeeze()[:,None]).squeeze() for sig in td['MC_pca']]
 td['Motor Cortex Transient Context Dim'] = [(sig @ norm_vec(transient_context_model.coef_).squeeze()[:,None]).squeeze() for sig in td['MC_pca']]
 td['Motor Cortex Tonic Context Dim'] = [(sig @ norm_vec(tonic_context_model.coef_).squeeze()[:,None]).squeeze() for sig in td['MC_pca']]
+td['Behavioral Tonic Context Dim'] = [(sig @ norm_vec(tonic_beh_context_model.coef_).squeeze()[:,None]).squeeze() for sig in td['beh_sig']]
 
 print(f'Angle between velocity dim and tonic context dim: {src.util.angle_between(vel_model.coef_.squeeze(),tonic_context_model.coef_.squeeze())} degrees')
 print(f'Angle between velocity dim and transient context dim: {src.util.angle_between(vel_model.coef_.squeeze(),transient_context_model.coef_.squeeze())} degrees')
@@ -399,8 +414,8 @@ def get_scree(arr):
     '''
     model = PCA()
     model.fit(arr)
-    return model.explained_variance_ratio_
-    # return model.explained_variance_
+    # return model.explained_variance_ratio_
+    return model.explained_variance_
 
 td_scree = (
     td
@@ -692,7 +707,7 @@ g = sns.pairplot(
     x_vars='Hand velocity (cm/s)',
     y_vars=[
         'Motor Cortex Velocity Dim',
-        # 'Motor Cortex Transient Context Dim',
+        'Motor Cortex Transient Context Dim',
         'Motor Cortex Tonic Context Dim'
     ],
     hue='task',
@@ -703,7 +718,7 @@ g = sns.pairplot(
 )
 sns.despine(fig=g.fig,trim=True)
 fig_name = src.util.format_outfile_name(td,postfix='neural_dims_v_vel')
-g.fig.savefig(os.path.join('../results/2022_sfn_poster/',fig_name+'.pdf'))
+# g.fig.savefig(os.path.join('../results/2022_sfn_poster/',fig_name+'.pdf'))
 
 #%% Context space
 td_explode = (
@@ -718,6 +733,7 @@ td_explode = (
         'Motor Cortex Velocity Dim',
         'Motor Cortex Transient Context Dim',
         'Motor Cortex Tonic Context Dim',
+        'Behavioral Tonic Context Dim',
         'Hand velocity (cm/s)'
     ])
     .explode([
@@ -725,6 +741,7 @@ td_explode = (
         'Motor Cortex Velocity Dim',
         'Motor Cortex Transient Context Dim',
         'Motor Cortex Tonic Context Dim',
+        'Behavioral Tonic Context Dim',
         'Hand velocity (cm/s)',
     ])
     .astype({
@@ -732,6 +749,7 @@ td_explode = (
         'Motor Cortex Velocity Dim': float,
         'Motor Cortex Transient Context Dim': float,
         'Motor Cortex Tonic Context Dim': float,
+        'Behavioral Tonic Context Dim': float,
         'Hand velocity (cm/s)': float,
     })
     # .loc[lambda df: df['Time from go cue (s)']>0]
@@ -739,7 +757,7 @@ td_explode = (
 )
 avg_trial = td_explode.groupby(['Time from go cue (s)','task']).mean().loc[-1:5].reset_index()
 task_colors={'RTT': 'C1','CST': 'C0'}
-fig,axs = plt.subplots(2,1,sharex=True,figsize=(6,6))
+fig,axs = plt.subplots(3,1,sharex=True,figsize=(6,6))
 for _,trial in td.groupby('task').sample(n=10).iterrows():
     axs[0].plot(
         trial['Time from go cue (s)'],
@@ -752,6 +770,13 @@ for _,trial in td.groupby('task').sample(n=10).iterrows():
     axs[1].plot(
         trial['Time from go cue (s)'],
         trial['Motor Cortex Tonic Context Dim'],
+        color=task_colors[trial['task']],
+        alpha=0.3,
+        lw=2,
+    )
+    axs[2].plot(
+        trial['Time from go cue (s)'],
+        trial['Behavioral Tonic Context Dim'],
         color=task_colors[trial['task']],
         alpha=0.3,
         lw=2,
@@ -772,8 +797,15 @@ for task,trial in avg_trial.groupby('task'):
         color=task_colors[task],
         lw=4,
     )
+    axs[2].plot(
+        trial['Time from go cue (s)'],
+        trial['Behavioral Tonic Context Dim'],
+        color=task_colors[task],
+        lw=4,
+    )
 axs[0].set_ylabel('Motor Cortex\nVelocity Dim')
 axs[1].set_ylabel('Motor Cortex\nContext Dim')
+axs[2].set_ylabel('Behavioral\nContext Dim')
 axs[-1].set_xlabel('Time from go cue (s)')
 axs[0].set_xlim([-1,5])
 sns.despine(fig=fig,trim=True)
@@ -1047,10 +1079,10 @@ def animate_trial_monitor(trial):
 
     return anim
 
-for trial_to_plot in [71,52]:
+for trial_to_plot in [71,52,227,228]:
     anim = animate_trial_monitor(td.loc[td['trial_id']==trial_to_plot].squeeze())
     anim_name = src.util.format_outfile_name(td,postfix=f'trial_{trial_to_plot}_monitor_anim')
-    anim.save(os.path.join('../results/2022_sfn_poster/',anim_name+'.mp4'),writer='ffmpeg',fps=30,dpi=400)
+    anim.save(os.path.join('../results/2022_sfn_poster/',anim_name+'half-speed.mp4'),writer='ffmpeg',fps=15,dpi=400)
 
 # %% animate just behavior, no raster
 task_colors = {'CST':'C0','RTT':'C1'}
