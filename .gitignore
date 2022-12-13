@@ -1,5 +1,6 @@
 *.egg-info
 src/__pycache__
+scripts/__pycache__
 /.quarto/
 reports/
 _freeze/
