@@ -10,7 +10,7 @@ def load_clean_data(
     keep_unsorted=False,
     bin_size=0.010,
     firing_rates_func= lambda td: pyaldata.add_firing_rates(td,method='smooth',std=0.05,backend='convolve'),
-    epoch_fun = lambda _: slice(None),
+    epoch_fun = lambda trial: slice(0,trial['hand_pos'].shape[0]),
     ):
     """
     Loads and cleans COCST trial data, given a file query
@@ -40,9 +40,9 @@ def load_clean_data(
         .pipe(remove_artifact_trials, verbose=verbose)
         .pipe(
             filter_unit_guides,
-            filter_func=lambda guide: guide[:,1] > (0 if keep_unsorted else 1)
+            filter_func=lambda guide: guide[:,1] >= (0 if keep_unsorted else 1)
         )
-        .pipe(remove_correlated_units)
+        .pipe(remove_correlated_units, verbose=verbose)
         .pipe(
             remove_all_low_firing_neurons,
             threshold=0.1,
@@ -59,7 +59,7 @@ def load_clean_data(
         )
         .pipe(rebin_data,new_bin_size=bin_size)
         .pipe(add_trial_time,ref_event='idx_goCueTime',column_name='Time from go cue (s)')
-        # .pipe(add_trial_time,ref_event='idx_pretaskHoldTime',column_name='Time from task cue (s)')
+        .pipe(add_trial_time,ref_event='idx_pretaskHoldTime',column_name='Time from task cue (s)')
     )
 
     return td
@@ -177,29 +177,50 @@ def filter_unit_guides(td,filter_func):
     return td
 
 @pyaldata.copy_td
-def remove_correlated_units(td):
+def remove_correlated_units(td, arrays=['M1','PMd','MC'], verbose=False):
     '''
     Removes correlated units from TD, given array name
+
+    TODO: change this to remove neuron pairs that have 1ms correlation > 0.2
     '''
 
-    # for now, this particular file only...
-    if td.loc[td.index[0], "session_date"] == pd.to_datetime("2018/06/26"):
-        unit_guide = td.loc[td.index[0],'M1_unit_guide']
-        corr_units = np.array([[8, 2], [64, 2]])
-        bad_units = (
-            np.in1d(unit_guide[:, 0], corr_units[:, 0])
-            & np.in1d(unit_guide[:, 1], corr_units[:, 1])
-        )
-        td = mask_neural_data(td, 'M1', ~bad_units)
-    elif td.loc[td.index[0], "session_date"] == pd.to_datetime("2022/07/20"):
-        corr_units = np.array([[71, 1], [73, 1]])
-        for array in ['M1','PMd','MC']:
-            unit_guide = td.loc[td.index[0],f'{array}_unit_guide']
-            bad_units = (
-                np.in1d(unit_guide[:, 0], corr_units[:, 0])
-                & np.in1d(unit_guide[:, 1], corr_units[:, 1])
-            )
-            td = mask_neural_data(td,array, ~bad_units)
+    # calculate correlation matrix
+    for array in arrays:
+        unit_guide = td.loc[td.index[0],f'{array}_unit_guide']
+        if unit_guide.shape[0] == 0:
+            continue
+
+        # calculate correlation matrix
+        corr_mat = np.corrcoef(np.row_stack(td[f'{array}_spikes']).T)
+
+        # find correlated units
+        corr_units = np.any(np.tril(corr_mat,k=-1) > 0.2, axis=1)
+
+        # remove correlated units (TODO: possibly only remove one neuron at a time)
+        td =  mask_neural_data(td, array, ~corr_units)
+
+        # verbose
+        if verbose:
+            print(f'{array}: {np.sum(corr_units)} correlated units removed')
+
+    # # for now, these particular files only...
+    # if td.loc[td.index[0], "session_date"] == pd.to_datetime("2018/06/26"):
+    #     unit_guide = td.loc[td.index[0],'M1_unit_guide']
+    #     corr_units = np.array([[8, 2], [64, 2]])
+    #     bad_units = (
+    #         np.in1d(unit_guide[:, 0], corr_units[:, 0])
+    #         & np.in1d(unit_guide[:, 1], corr_units[:, 1])
+    #     )
+    #     td = mask_neural_data(td, 'M1', ~bad_units)
+    # elif td.loc[td.index[0], "session_date"] == pd.to_datetime("2022/07/20"):
+    #     corr_units = np.array([[71, 1], [73, 1]])
+    #     for array in ['M1','PMd','MC']:
+    #         unit_guide = td.loc[td.index[0],f'{array}_unit_guide']
+    #         bad_units = (
+    #             np.in1d(unit_guide[:, 0], corr_units[:, 0])
+    #             & np.in1d(unit_guide[:, 1], corr_units[:, 1])
+    #         )
+    #         td = mask_neural_data(td,array, ~bad_units)
 
     return td
 

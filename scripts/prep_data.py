@@ -45,8 +45,8 @@ def main():
     # td_cst = trial_data.groupby("task").get_group("CST")
     # prep_and_save_data(td_cst, "data/pre-lfads/Earl_20190716_CST_tensors.hdf5")
 
-    # filename = 'data/trial_data/Prez_20220720_RTTCSTCO_TD.mat'
-    filename = 'data/trial_data/Earl_20190716_COCST_TD.mat'
+    filename = 'data/trial_data/Prez_20220721_RTTCST_TD.mat'
+    # filename = 'data/trial_data/Earl_20190716_COCST_TD.mat'
     td = (
         pyaldata.mat2dataframe(
             filename,
@@ -62,9 +62,9 @@ def main():
         .pipe(src.data.remove_artifact_trials, verbose=params['verbose'])
         .pipe(
             src.data.filter_unit_guides,
-            filter_func=lambda guide: guide[:,1] > (0 if params['keep_unsorted'] else 1)
+            filter_func=lambda guide: guide[:,1] >= (0 if params['keep_unsorted'] else 1)
         )
-        .pipe(src.data.remove_correlated_units)
+        .pipe(src.data.remove_correlated_units,verbose=params['verbose'])
         .pipe(
             src.data.remove_all_low_firing_neurons,
             threshold=0.1,
@@ -72,7 +72,7 @@ def main():
             verbose=params['verbose']
         )
     )
-    prep_and_save_data(td, "data/pre-lfads/Prez_20220720_RTTCST_tensors.hdf5")
+    prep_and_save_data(td, "data/pre-lfads/Prez_20220721_RTTCST_tensors.hdf5")
 
 
 if __name__=='__main__':
