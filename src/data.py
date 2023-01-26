@@ -45,7 +45,7 @@ def load_clean_data(
         .pipe(remove_aborts, verbose=verbose)
         .astype({
             'idx_ctHoldTime': int,
-            # 'idx_pretaskHoldTime': int,
+            'idx_pretaskHoldTime': int,
             'idx_goCueTime': int,
         })
         .pipe(remove_artifact_trials, verbose=verbose)
@@ -86,17 +86,26 @@ def load_clean_data(
             td
             .pipe(
                 lfads_helpers.add_lfads_rates,
-                post_data.rates,
+                post_data.rates/lfads_params["bin_size"],
                 chopped_trial_ids=trial_ids,
                 overlap=lfads_params["overlap"],
+                new_sig_name="lfads_rates",
             )
-            .pipe(trim_nans,ref_signals=['lfads_rates'])
+            .pipe(
+                lfads_helpers.add_lfads_rates,
+                post_data.gen_inputs/lfads_params['bin_size'],
+                chopped_trial_ids=trial_ids,
+                overlap=lfads_params['overlap'],
+                new_sig_name='lfads_inputs',
+            )
         )
 
     td = (
         td
+        # do sequential trimming to maximally avoid edge effects from kinematic signals
         .pipe(trim_nans, ref_signals=['rel_hand_pos'])
         .pipe(fill_kinematic_signals)
+        .pipe(trim_nans,ref_signals=['lfads_rates'])
         .pipe(
             pyaldata.restrict_to_interval,
             epoch_fun = epoch_fun,
@@ -145,8 +154,11 @@ def trim_nans(trial_data, ref_signals=["rel_hand_pos"]):
     Trim nans off of end of trials when hand position wasn't recorded
     """
 
+    if len(set(ref_signals).intersection(trial_data.columns)) == 0:
+        return trial_data
+
     def epoch_fun(trial):
-        signals = np.column_stack([trial[sig] for sig in ref_signals])
+        signals = np.column_stack([trial[sig] for sig in ref_signals if sig in trial.index])
         nan_times = np.any(np.isnan(signals), axis=1)
         first_viable_time = np.nonzero(~nan_times)[0][0]
         last_viable_time = np.nonzero(~nan_times)[0][-1]
