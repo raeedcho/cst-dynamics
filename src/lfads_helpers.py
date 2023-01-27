@@ -138,6 +138,7 @@ def add_lfads_rates(
             lfads_chopped_rates[chopped_trial_ids == frame_trial_id, :, :],
             overlap=overlap,
             orig_len=trial_data.loc[frame_ind, "M1_spikes"].shape[0],
+            smooth_pwr=1,
         )
 
         trial_data.at[frame_ind, new_sig_name] = rates
