@@ -61,7 +61,6 @@ def load_clean_data(
             verbose=verbose
         )
         .pipe(firing_rates_func)
-        .pipe(rebin_data,new_bin_size=bin_size)
     )
 
     if lfads_params is not None:
@@ -84,12 +83,13 @@ def load_clean_data(
 
         td = (
             td
+            .pipe(rebin_data,new_bin_size=lfads_params['bin_size'])
             .pipe(
                 lfads_helpers.add_lfads_rates,
-                post_data.rates/lfads_params["bin_size"],
+                post_data.rates/lfads_params['bin_size'],
                 chopped_trial_ids=trial_ids,
-                overlap=lfads_params["overlap"],
-                new_sig_name="lfads_rates",
+                overlap=lfads_params['overlap'],
+                new_sig_name='lfads_rates',
             )
             .pipe(
                 lfads_helpers.add_lfads_rates,
@@ -111,6 +111,7 @@ def load_clean_data(
             epoch_fun = epoch_fun,
             warn_per_trial=True,
         )
+        .pipe(rebin_data,new_bin_size=bin_size)
         .pipe(add_trial_time,ref_event='idx_goCueTime',column_name='Time from go cue (s)')
         .pipe(add_trial_time,ref_event='idx_pretaskHoldTime',column_name='Time from task cue (s)')
     )
@@ -424,4 +425,10 @@ def rebin_data(trial_data, new_bin_size):
     
     Note: this is a wrapper on pyaldata.combine_time_bins.
     '''
-    return pyaldata.combine_time_bins(trial_data, n_bins=int(new_bin_size/trial_data['bin_size'].values[0]))
+    assert new_bin_size >= trial_data['bin_size'].values[0], "New bin size must be larger than old bin size."
+    assert np.isclose(new_bin_size % trial_data['bin_size'].values[0],0), "New bin size must be a multiple of old bin size."
+
+    if new_bin_size==trial_data['bin_size'].values[0]:
+        return trial_data.copy()
+    else:
+        return pyaldata.combine_time_bins(trial_data, n_bins=int(new_bin_size/trial_data['bin_size'].values[0]))
