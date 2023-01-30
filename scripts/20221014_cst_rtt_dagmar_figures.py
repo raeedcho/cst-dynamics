@@ -34,9 +34,6 @@ import seaborn as sns
 mpl.rcParams['pdf.fonttype'] = 42
 sns.set_context('talk')
 
-%load_ext autoreload
-%autoreload 2
-
 params = {
     'verbose': True,
     'keep_unsorted': True,
