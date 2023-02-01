@@ -432,3 +432,40 @@ def rebin_data(trial_data, new_bin_size):
         return trial_data.copy()
     else:
         return pyaldata.combine_time_bins(trial_data, n_bins=int(new_bin_size/trial_data['bin_size'].values[0]))
+
+@pyaldata.copy_td
+def remove_baseline_rates(trial_data, signals=['MC_rates']):
+    '''
+    Removes the baseline firing rate from the signal, where "baseline"
+    is defined as the average firing rate from -300ms to -50ms from
+    when the task cue is presented.
+    '''
+
+    if type(signals)==str:
+        signals = [signals]
+
+    for signal in signals:
+        # get baseline firing rates
+        baseline_rates = (
+            trial_data.groupby('result').get_group('R')
+            .filter(items=[
+                'trial_id',
+                'Time from task cue (s)',
+                signal,
+            ])
+            .explode([
+                'Time from task cue (s)',
+                signal,
+            ])
+            .astype({
+                'Time from task cue (s)': 'float',
+            })
+            .query('`Time from task cue (s)`>=-0.3 and `Time from task cue (s)`<=-0.05')
+            [signal]
+            .mean()
+        )
+
+        # subtract baseline firing rates
+        trial_data[signal] = trial_data[signal].apply(lambda x: x-baseline_rates)
+
+    return trial_data

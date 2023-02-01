@@ -31,9 +31,12 @@ load_params = {
 }
 td = (
     src.data.load_clean_data(**load_params)
+    .query('task=="RTT" | task=="CST"')
     .assign(**{'trialtime': lambda x: x['Time from go cue (s)']})
-    .pipe(pyaldata.dim_reduce,PCA(n_components=15),'MC_rates','MC_pca')
-    .pipe(pyaldata.dim_reduce,PCA(n_components=15),'lfads_rates','lfads_pca')
+    .pipe(pyaldata.soft_normalize_signal,signals=['lfads_rates','MC_rates'])
+    .pipe(src.data.remove_baseline_rates,signals=['MC_rates','lfads_rates'])
+    .pipe(pyaldata.dim_reduce,TruncatedSVD(n_components=15),'MC_rates','MC_pca')
+    .pipe(pyaldata.dim_reduce,TruncatedSVD(n_components=15),'lfads_rates','lfads_pca')
     .pipe(pyaldata.dim_reduce,SSA(R=15,n_epochs=3000,lr=0.01),'MC_rates','MC_ssa')
     .pipe(pyaldata.dim_reduce,SSA(R=15,n_epochs=3000,lr=0.01),'lfads_rates','lfads_ssa')
 )
@@ -44,7 +47,7 @@ trial = td.loc[td['trial_id']==trialnum].squeeze()
 fig,ax = plt.subplots(4,1,figsize=(10,10))
 src.plot.plot_hand_trace(trial,ax=ax[0])
 src.plot.plot_hand_velocity(trial,ax=ax[1])
-ax[2].plot(trial['lfads_pca'][:,0:3])
+ax[2].plot(trial['lfads_pca'][:,0:15])
 ax[3].plot(trial['lfads_inputs'])
 
 # %%
@@ -72,7 +75,7 @@ for _,trial in td.query('task=="CST"').sample(n=10).iterrows():
     cst_trace_plot+=k3d.line(
         neural_trace[:,0:3].astype(np.float32),
         shader='mesh',
-        width=0.5,
+        width=3e-3,
         attribute=trial['hand_vel'][:,0],
         color_map=k3d.paraview_color_maps.Erdc_divHi_purpleGreen,
         color_range=[-max_abs_hand_vel,max_abs_hand_vel],
@@ -85,7 +88,7 @@ for _,trial in td.query('task=="RTT"').sample(n=10).iterrows():
     rtt_trace_plot+=k3d.line(
         neural_trace[:,0:3].astype(np.float32),
         shader='mesh',
-        width=0.5,
+        width=3e-3,
         attribute=trial['hand_vel'][:,0],
         color_map=k3d.paraview_color_maps.Erdc_divHi_purpleGreen,
         color_range=[-max_abs_hand_vel,max_abs_hand_vel],
