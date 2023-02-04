@@ -219,7 +219,7 @@ for colnum,trial_id in enumerate(trials_to_plot):
 
 # %% decoding
 
-signal = 'lfads_pca'
+signal = 'lfads_rates'
 def get_test_labels(df):
     gss = GroupShuffleSplit(n_splits=1,test_size=0.25)
     _,test = next(gss.split(
@@ -341,5 +341,108 @@ sns.heatmap(
 )
 # fig_name = src.util.format_outfile_name(td,postfix='cst_rtt_vel_pred_scores')
 # fig.savefig(os.path.join('../results/2022_sfn_poster/',fig_name+'.pdf'))
+
+# %% Export data for subspace splitting in MATLAB
+'''
+This code will go through the following steps:
+- Restrict to only data from -300ms to 5000ms from the go cue
+- Run a separated-rejoined PCA on CST and RTT data:
+    - Run PCA separately on RTT and CST data in this epoch
+    - Concatenate the PC weights from the two tasks
+    - Run SVD on the concatenated PC weights to get new component weights
+    - Project the data onto the new component weights
+- Calculate the covariance matrices for each task
+'''
+
+signal = 'lfads_rates'
+num_dims = 15
+td_trim = (
+    td
+    .assign(
+        **{'Hand velocity (cm/s)': lambda x: x.apply(lambda y: y['hand_vel'][:,0],axis=1)}
+    )
+    .filter(items=[
+        'trial_id',
+        'task',
+        'Time from go cue (s)',
+        'Hand velocity (cm/s)',
+        signal,
+    ])
+    .explode([
+        'Time from go cue (s)',
+        'Hand velocity (cm/s)',
+        signal,
+    ])
+    .astype({
+        'Time from go cue (s)': float,
+        'Hand velocity (cm/s)': float,
+    })
+    .query('`Time from go cue (s)`>=-0.3 & `Time from go cue (s)`<=5')
+    .reset_index(drop=True)
+)
+
+def get_pcs(df):
+    pca = PCA(n_components=num_dims)
+    pca.fit(np.row_stack(df[signal]))
+    return pca.components_
+
+separate_pcs = (
+    td_trim
+    .groupby('task')
+    .apply(get_pcs)
+)
+_,_,vt = np.linalg.svd(np.row_stack(separate_pcs),full_matrices=False)
+
+def project_data(df):
+    sig = np.row_stack(df[signal])
+    return np.dot(sig-sig.mean(axis=0),vt.T)
+
+covar_mats = (
+    td_trim
+    .groupby('task')
+    .apply(lambda df: pd.DataFrame(data=np.cov(project_data(df),rowvar=False)))
+)
+
+covar_mats.to_csv(f"../results/subspace_splitting/Prez_20220721_CSTRTT_{signal.replace('_rates','')}_covar_mats.csv")
+
+# %% import subpsace splitter data
+
+import scipy.io as sio
+matfile = sio.loadmat(
+    f"../results/subspace_splitting/Prez_20220721_CSTRTT_{signal.replace('_rates','')}_subspacesplitter.mat",
+    squeeze_me=True,
+)
+
+Q = {key: matfile['Q'][key].item() for key in matfile['Q'].dtype.names}
+varexp = {key: matfile['varexp'][key].item() for key in matfile['varexp'].dtype.names}
+
+# verify that varexp matches the covariance matrices we calculated
+# np.trace(Q['unique1'].T @ covar_mats.loc['RTT'] @ Q['unique1'])/np.trace(covar_mats.loc['RTT'])
+
+# project data through the joint space into the split subspaces
+def proj_joint_spaces(df):
+    sig = np.row_stack(df[signal])
+    return np.dot(sig-sig.mean(axis=0),Q['joint'].T)
+
+td_proj = (
+    td_trim.copy()
+    .join(
+        (
+            td_trim
+            .groupby('task')
+            [signal]
+            .apply(lambda s: s.mean(axis=0))
+        ),
+        on='task',
+        rsuffix='_mean',
+    )
+    .assign(**{
+        f'centered_{signal}': lambda df: df[signal] - df[f'{signal}_mean'],
+        f'joint_proj_{signal}': lambda df: df.apply(lambda s: np.dot(s[f'centered_{signal}'],vt.T),axis=1),
+        f'{signal}_cst_unique': lambda df: df.apply(lambda s: np.dot(s[f'joint_proj_{signal}'],Q['unique1']),axis=1),
+        f'{signal}_rtt_unique': lambda df: df.apply(lambda s: np.dot(s[f'joint_proj_{signal}'],Q['unique2']),axis=1),
+        f'{signal}_shared': lambda df: df.apply(lambda s: np.dot(s[f'joint_proj_{signal}'],Q['shared']),axis=1),
+    })
+)
 
 # %%
