@@ -1,10 +1,10 @@
 #%%
-import numpy as np
-
 import src
+
 import pyaldata
-import yaml
+import numpy as np
 import pandas as pd
+import yaml
 
 from sklearn.decomposition import PCA, TruncatedSVD
 from sklearn.linear_model import LinearRegression
@@ -14,6 +14,8 @@ from src.models import SSA
 
 import seaborn as sns
 import matplotlib.pyplot as plt
+import k3d
+import scipy.io as sio
 
 with open("../params.yaml", "r") as params_file:
     lfads_params = yaml.safe_load(params_file)["lfads_prep"]
@@ -42,7 +44,7 @@ td = (
 )
 
 # %%
-trialnum = 228
+trialnum = 227
 trial = td.loc[td['trial_id']==trialnum].squeeze()
 fig,ax = plt.subplots(4,1,figsize=(10,10))
 src.plot.plot_hand_trace(trial,ax=ax[0])
@@ -64,36 +66,6 @@ for trial_id in trials_to_plot:
     )
 
 sns.despine(ax=ax,left=True,bottom=True)
-
-#%% k3d plots
-import k3d
-cst_trace_plot = k3d.plot(name='CST smoothed neural traces')
-max_abs_hand_vel = np.percentile(np.abs(np.row_stack(td['hand_vel'])[:,0]),95)
-# plot traces
-for _,trial in td.query('task=="CST"').sample(n=10).iterrows():
-    neural_trace = trial['lfads_pca']
-    cst_trace_plot+=k3d.line(
-        neural_trace[:,0:3].astype(np.float32),
-        shader='mesh',
-        width=3e-3,
-        attribute=trial['hand_vel'][:,0],
-        color_map=k3d.paraview_color_maps.Erdc_divHi_purpleGreen,
-        color_range=[-max_abs_hand_vel,max_abs_hand_vel],
-    )
-cst_trace_plot.display()
-
-rtt_trace_plot = k3d.plot(name='RTT smoothed neural traces')
-for _,trial in td.query('task=="RTT"').sample(n=10).iterrows():
-    neural_trace = trial['lfads_pca']
-    rtt_trace_plot+=k3d.line(
-        neural_trace[:,0:3].astype(np.float32),
-        shader='mesh',
-        width=3e-3,
-        attribute=trial['hand_vel'][:,0],
-        color_map=k3d.paraview_color_maps.Erdc_divHi_purpleGreen,
-        color_range=[-max_abs_hand_vel,max_abs_hand_vel],
-    )
-rtt_trace_plot.display()
 
 #%% Context space
 
@@ -407,7 +379,6 @@ covar_mats.to_csv(f"../results/subspace_splitting/Prez_20220721_CSTRTT_{signal.r
 
 # %% import subpsace splitter data
 
-import scipy.io as sio
 matfile = sio.loadmat(
     f"../results/subspace_splitting/Prez_20220721_CSTRTT_{signal.replace('_rates','')}_subspacesplitter.mat",
     squeeze_me=True,
@@ -419,11 +390,12 @@ varexp = {key: matfile['varexp'][key].item() for key in matfile['varexp'].dtype.
 # verify that varexp matches the covariance matrices we calculated
 # np.trace(Q['unique1'].T @ covar_mats.loc['RTT'] @ Q['unique1'])/np.trace(covar_mats.loc['RTT'])
 
-# project data through the joint space into the split subspaces
-def proj_joint_spaces(df):
-    sig = np.row_stack(df[signal])
-    return np.dot(sig-sig.mean(axis=0),Q['joint'].T)
+var_thresh = 0.016 # slightly arbitrary, chosen by looking at split variance explained numbers
+cst_unique_proj = Q['unique1'][:,varexp['unique1_C1']>var_thresh]
+rtt_unique_proj = Q['unique2'][:,varexp['unique2_C2']>var_thresh]
+shared_proj = Q['shared']
 
+# project data through the joint space into the split subspaces
 td_proj = (
     td_trim.copy()
     .join(
@@ -439,10 +411,65 @@ td_proj = (
     .assign(**{
         f'centered_{signal}': lambda df: df[signal] - df[f'{signal}_mean'],
         f'joint_proj_{signal}': lambda df: df.apply(lambda s: np.dot(s[f'centered_{signal}'],vt.T),axis=1),
-        f'{signal}_cst_unique': lambda df: df.apply(lambda s: np.dot(s[f'joint_proj_{signal}'],Q['unique1']),axis=1),
-        f'{signal}_rtt_unique': lambda df: df.apply(lambda s: np.dot(s[f'joint_proj_{signal}'],Q['unique2']),axis=1),
-        f'{signal}_shared': lambda df: df.apply(lambda s: np.dot(s[f'joint_proj_{signal}'],Q['shared']),axis=1),
+        f'{signal}_cst_unique': lambda df: df.apply(lambda s: np.dot(s[f'joint_proj_{signal}'],cst_unique_proj),axis=1),
+        f'{signal}_rtt_unique': lambda df: df.apply(lambda s: np.dot(s[f'joint_proj_{signal}'],rtt_unique_proj),axis=1),
+        f'{signal}_shared': lambda df: df.apply(lambda s: np.dot(s[f'joint_proj_{signal}'],shared_proj),axis=1),
     })
+    .drop(columns=[signal,f'{signal}_mean',f'centered_{signal}',f'joint_proj_{signal}'])
+
+    .set_index(['trial_id','Time from go cue (s)'])
 )
+
+#%% k3d plots
+cst_trace_plot = k3d.plot(name='CST smoothed neural traces')
+max_abs_hand_vel = np.percentile(np.abs(np.row_stack(td['hand_vel'])[:,0]),95)
+# plot traces
+for _,trial in td.query('task=="CST"').sample(n=10).iterrows():
+    neural_trace = trial['lfads_pca']
+    cst_trace_plot+=k3d.line(
+        neural_trace[:,0:3].astype(np.float32),
+        shader='mesh',
+        width=3e-3,
+        attribute=trial['hand_vel'][:,0],
+        color_map=k3d.paraview_color_maps.Erdc_divHi_purpleGreen,
+        color_range=[-max_abs_hand_vel,max_abs_hand_vel],
+    )
+cst_trace_plot.display()
+
+rtt_trace_plot = k3d.plot(name='RTT smoothed neural traces')
+for _,trial in td.query('task=="RTT"').sample(n=10).iterrows():
+    neural_trace = trial['lfads_pca']
+    rtt_trace_plot+=k3d.line(
+        neural_trace[:,0:3].astype(np.float32),
+        shader='mesh',
+        width=3e-3,
+        attribute=trial['hand_vel'][:,0],
+        color_map=k3d.paraview_color_maps.Erdc_divHi_purpleGreen,
+        color_range=[-max_abs_hand_vel,max_abs_hand_vel],
+    )
+rtt_trace_plot.display()
+
+#%% k3d plots with explode-y td
+max_abs_hand_vel = np.percentile(np.abs(td_proj['Hand velocity (cm/s)']),95)
+
+def plot_k3d_trace(trial,plot):
+    neural_trace = np.row_stack(trial['lfads_rates_rtt_unique'])
+    plot+=k3d.line(
+        neural_trace[:,0:3].astype(np.float32),
+        shader='mesh',
+        width=3e-3,
+        attribute=trial['Hand velocity (cm/s)'],
+        color_map=k3d.paraview_color_maps.Erdc_divHi_purpleGreen,
+        color_range=[-max_abs_hand_vel,max_abs_hand_vel],
+    )
+    plot.display()
+
+# plot traces
+cst_trial = td_proj.loc[227]
+rtt_trial = td_proj.loc[228]
+cst_trace_plot = k3d.plot(name='CST neural traces in shared space')
+rtt_trace_plot = k3d.plot(name='RTT neural traces in shared space')
+plot_k3d_trace(cst_trial,cst_trace_plot)
+plot_k3d_trace(rtt_trial,rtt_trace_plot)
 
 # %%
