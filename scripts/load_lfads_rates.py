@@ -44,7 +44,7 @@ td = (
 )
 
 # %%
-trialnum = 227
+trialnum = 228
 trial = td.loc[td['trial_id']==trialnum].squeeze()
 fig,ax = plt.subplots(4,1,figsize=(10,10))
 src.plot.plot_hand_trace(trial,ax=ax[0])
@@ -191,11 +191,11 @@ for colnum,trial_id in enumerate(trials_to_plot):
 
 # %% decoding
 
-signal = 'lfads_rates'
+signal = 'lfads_pca'
 def get_test_labels(df):
     gss = GroupShuffleSplit(n_splits=1,test_size=0.25)
     _,test = next(gss.split(
-        df['lfads_pca'],
+        df[signal],
         df['True velocity'],
         groups=df['trial_id'],
     ))
@@ -208,7 +208,7 @@ def fit_models(df):
         models[task] = LinearRegression()
         train_df = df.loc[(~df['Test set']) & (df['task']==task)]
         models[task].fit(
-            np.row_stack(train_df['lfads_pca']),
+            np.row_stack(train_df[signal]),
             train_df['True velocity'],
         )
 
@@ -216,7 +216,7 @@ def fit_models(df):
     models['Joint'] = LinearRegression()
     train_df = df.loc[~df['Test set']]
     models['Joint'].fit(
-        np.row_stack(train_df['lfads_pca']),
+        np.row_stack(train_df[signal]),
         train_df['True velocity'],
     )
 
@@ -226,7 +226,7 @@ def model_predict(df,models):
     ret_df = df.copy()
     for model_name,model in models.items():
         ret_df = ret_df.assign(**{
-            f'{model_name} predicted': model.predict(np.row_stack(ret_df['lfads_pca']))
+            f'{model_name} predicted': model.predict(np.row_stack(ret_df[signal]))
         })
     return ret_df
 
@@ -238,7 +238,7 @@ def score_models(df,models):
     for task in df['task'].unique():
         for model_name, model in models.items():
             test_df = df.loc[df['Test set'] & (df['task']==task)]
-            scores[(task,model_name)] = model.score(np.row_stack(test_df['lfads_pca']),test_df['True velocity'])
+            scores[(task,model_name)] = model.score(np.row_stack(test_df[signal]),test_df['True velocity'])
     
     return scores
 
@@ -252,12 +252,12 @@ td_train_test = (
         'Time from go cue (s)',
         'task',
         'True velocity',
-        'lfads_pca',
+        signal,
     ])
     .explode([
         'Time from go cue (s)',
         'True velocity',
-        'lfads_pca',
+        signal,
     ])
     .astype({
         'Time from go cue (s)': float,
@@ -311,8 +311,6 @@ sns.heatmap(
     annot_kws={'fontsize': 21},
     cmap='gray',
 )
-# fig_name = src.util.format_outfile_name(td,postfix='cst_rtt_vel_pred_scores')
-# fig.savefig(os.path.join('../results/2022_sfn_poster/',fig_name+'.pdf'))
 
 # %% Export data for subspace splitting in MATLAB
 '''
@@ -471,5 +469,54 @@ cst_trace_plot = k3d.plot(name='CST neural traces in shared space')
 rtt_trace_plot = k3d.plot(name='RTT neural traces in shared space')
 plot_k3d_trace(cst_trial,cst_trace_plot)
 plot_k3d_trace(rtt_trial,rtt_trace_plot)
+
+# %% Plot individual traces
+def plot_trial_shared_space(trial_to_plot,ax_list,signal_to_plot):
+    num_dims = ax_list.shape[0]-1
+
+    beh_ax = ax_list[-1]
+    beh_ax.plot('Time from go cue (s)','Hand velocity (cm/s)',data=trial_to_plot)
+    # beh_ax.set_ylabel('Vel')
+
+    for i in range(num_dims):
+        ax = ax_list[i]
+        # Plot SSA results
+        ax.plot(trial_to_plot['Time from go cue (s)'].values[[0,-1]],[0,0],color='k')
+        ax.plot(trial_to_plot['Time from go cue (s)'],np.row_stack(trial_to_plot[signal_to_plot])[:,i])
+        # ax.set_yticks([])
+        ax.plot([0,0],ax.get_ylim(),color='k',linestyle='--')
+        sns.despine(ax=ax,trim=True)
+
+trials_to_plot = [227,225]
+fig,axs = plt.subplots(6,len(trials_to_plot),sharex=True,sharey='row',figsize=(10,10))
+
+for colnum,trial_id in enumerate(trials_to_plot):
+    # trial = td.loc[td['trial_id']==trial_id].squeeze()
+    trial = td_proj.loc[trial_id].reset_index()
+    plot_trial_shared_space(trial,axs[:,colnum],signal_to_plot='lfads_rates_shared')
+
+
+# %% add derivatives to td_proj rates
+
+def compute_signal_derivative(td_explode,signal):
+    return (
+        td_explode
+        .groupby('trial_id')
+        [signal]
+        .transform(lambda s: list(np.gradient(
+            np.row_stack(s),
+            s.reset_index(level=1)['Time from go cue (s)'],
+            axis=0
+        )))
+    )
+
+td_proj = (
+    td_proj
+    .assign(**{
+        'lfads_rates_cst_unique_d1': lambda df: compute_signal_derivative(df,'lfads_rates_cst_unique'),
+        'lfads_rates_rtt_unique_d1': lambda df: compute_signal_derivative(df,'lfads_rates_rtt_unique'),
+        'lfads_rates_shared_d1': lambda df: compute_signal_derivative(df,'lfads_rates_shared'),
+    })
+)
 
 # %%
