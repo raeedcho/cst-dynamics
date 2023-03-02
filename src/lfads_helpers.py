@@ -129,7 +129,7 @@ def add_lfads_rates(
 
     trial_data[new_sig_name] = [spikes for spikes in trial_data["M1_spikes"]]
 
-    for frame_ind, frame_trial_id in trial_data["trial_id"].iteritems():
+    for frame_ind, frame_trial_id in trial_data["trial_id"].items():
         assert (
             frame_trial_id in chopped_trial_ids
         ), "Trial id {} not found in chopped data".format(frame_trial_id)
