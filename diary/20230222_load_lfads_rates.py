@@ -39,8 +39,8 @@ td = (
     .pipe(src.data.remove_baseline_rates,signals=['MC_rates','lfads_rates'])
     .pipe(pyaldata.dim_reduce,TruncatedSVD(n_components=15),'MC_rates','MC_pca')
     .pipe(pyaldata.dim_reduce,TruncatedSVD(n_components=15),'lfads_rates','lfads_pca')
-    .pipe(pyaldata.dim_reduce,SSA(R=15,n_epochs=3000,lr=0.01),'MC_rates','MC_ssa')
-    .pipe(pyaldata.dim_reduce,SSA(R=15,n_epochs=3000,lr=0.01),'lfads_rates','lfads_ssa')
+    # .pipe(pyaldata.dim_reduce,SSA(R=15,n_epochs=3000,lr=0.01),'MC_rates','MC_ssa')
+    # .pipe(pyaldata.dim_reduce,SSA(R=15,n_epochs=3000,lr=0.01),'lfads_rates','lfads_ssa')
 )
 
 # %%
@@ -347,7 +347,7 @@ td_trim = (
         'Time from go cue (s)': float,
         'Hand velocity (cm/s)': float,
     })
-    .query('`Time from go cue (s)`>=-0.3 & `Time from go cue (s)`<=5')
+    .query('`Time from go cue (s)`>=-0.3 & `Time from go cue (s)`<5')
     .reset_index(drop=True)
 )
 
@@ -374,6 +374,9 @@ covar_mats = (
 )
 
 covar_mats.to_csv(f"../results/subspace_splitting/Prez_20220721_CSTRTT_{signal.replace('_rates','')}_covar_mats.csv")
+
+# %% Check total neural variance of each task to see if we can replace separate PCA with joint PCA...
+
 
 # %% import subpsace splitter data
 
@@ -470,31 +473,6 @@ rtt_trace_plot = k3d.plot(name='RTT neural traces in shared space')
 plot_k3d_trace(cst_trial,cst_trace_plot)
 plot_k3d_trace(rtt_trial,rtt_trace_plot)
 
-# %% Plot individual traces
-def plot_trial_shared_space(trial_to_plot,ax_list,signal_to_plot):
-    num_dims = ax_list.shape[0]-1
-
-    beh_ax = ax_list[-1]
-    beh_ax.plot('Time from go cue (s)','Hand velocity (cm/s)',data=trial_to_plot)
-    # beh_ax.set_ylabel('Vel')
-
-    for i in range(num_dims):
-        ax = ax_list[i]
-        # Plot SSA results
-        ax.plot(trial_to_plot['Time from go cue (s)'].values[[0,-1]],[0,0],color='k')
-        ax.plot(trial_to_plot['Time from go cue (s)'],np.row_stack(trial_to_plot[signal_to_plot])[:,i])
-        # ax.set_yticks([])
-        ax.plot([0,0],ax.get_ylim(),color='k',linestyle='--')
-        sns.despine(ax=ax,trim=True)
-
-trials_to_plot = [227,225]
-fig,axs = plt.subplots(6,len(trials_to_plot),sharex=True,sharey='row',figsize=(10,10))
-
-for colnum,trial_id in enumerate(trials_to_plot):
-    # trial = td.loc[td['trial_id']==trial_id].squeeze()
-    trial = td_proj.loc[trial_id].reset_index()
-    plot_trial_shared_space(trial,axs[:,colnum],signal_to_plot='lfads_rates_shared')
-
 
 # %% add derivatives to td_proj rates
 
@@ -519,4 +497,62 @@ td_proj = (
     })
 )
 
+# %%
+# A couple things to do:
+#   - Check how aligned decoder axis is with each subspace
+#   - Transfer these subspaces back to original data structure to plot hand position and target info
+
+#%% Transfer subspace rates back to original data struct (td)
+
+td_subspace_split = (
+    td
+    .pipe(pyaldata.restrict_to_interval,warn_per_trial=True,epoch_fun=src.util.generate_realtime_epoch_fun(
+        start_point_name='idx_goCueTime',
+        rel_start_time=-0.3,
+        rel_end_time=5,
+    ))
+    .join(
+        (
+            td_proj
+            .groupby('trial_id')
+            .agg({
+                'lfads_rates_cst_unique': np.row_stack,
+                'lfads_rates_rtt_unique': np.row_stack,
+                'lfads_rates_shared': np.row_stack,
+            })
+        ),
+        on='trial_id',
+    )
+)
+
+# %% Plot individual traces
+def plot_trial_split_space(trial_to_plot,ax_list):
+    src.plot.plot_hand_trace(trial_to_plot,ax=ax_list[0],timesig='Time from go cue (s)')
+    src.plot.plot_hand_velocity(trial_to_plot,ax_list[1],timesig='Time from go cue (s)')
+
+    sig_list = ['lfads_rates_shared','lfads_rates_cst_unique','lfads_rates_rtt_unique']
+    sig_colors = {
+        'lfads_rates_cst_unique':'C0',
+        'lfads_rates_rtt_unique':'C1',
+        'lfads_rates_shared': 'C4',
+    }
+
+    rownum = 2
+    for sig in sig_list:
+        for dim in range(trial[sig].shape[1]):
+            ax = ax_list[rownum]
+            ax.plot(trial_to_plot['Time from go cue (s)'][[0,-1]],[0,0],color='k')
+            ax.plot(trial_to_plot['Time from go cue (s)'],trial_to_plot[sig][:,dim],color=sig_colors[sig])
+            # ax.set_yticks([])
+            ax.plot([0,0],ax.get_ylim(),color='k',linestyle='--')
+            sns.despine(ax=ax,trim=True)
+            rownum+=1
+
+    ax_list[-1].set_xlabel('Time from go cue (s)')
+
+trials_to_plot = td_subspace_split.groupby('task').sample(n=1).set_index('trial_id')
+fig,axs = plt.subplots(19,len(trials_to_plot),sharex=True,sharey='row',figsize=(10,18))
+fig.tight_layout()
+for colnum,(trial_id,trial) in enumerate(trials_to_plot.iterrows()):
+    plot_trial_split_space(trial,axs[:,colnum])
 # %%

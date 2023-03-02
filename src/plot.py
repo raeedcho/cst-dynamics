@@ -92,50 +92,55 @@ def make_trial_raster(trial, ax=None, sig='M1_spikes', events=None, ref_event_id
 
     return ax
 
-def plot_hand_trace(trial,ax=None):
+def plot_hand_trace(trial,ax=None,timesig='trialtime'):
     if ax is None:
         ax = plt.gca()
 
     # zero line
-    ax.plot([trial['trialtime'][0],trial['trialtime'][-1]],[0,0],'-k')
+    ax.plot([trial[timesig][0],trial[timesig][-1]],[0,0],'-k')
 
     # targets
     targ_size = 10
-    ax.add_patch(Rectangle(
-        (trial['trialtime'][trial['idx_ctHoldTime']],-targ_size/2),
-        trial['trialtime'][trial['idx_pretaskHoldTime']]-trial['trialtime'][trial['idx_ctHoldTime']],
-        targ_size,
-        color='0.5',
-    ))
-    if trial['task']=='RTT':
+    if not np.isnan(trial['idx_ctHoldTime']) and not np.isnan(trial['idx_pretaskHoldTime']):
         ax.add_patch(Rectangle(
-            (trial['trialtime'][trial['idx_pretaskHoldTime']],-targ_size/2),
-            trial['trialtime'][trial['idx_goCueTime']]-trial['trialtime'][trial['idx_pretaskHoldTime']],
+            (trial[timesig][trial['idx_ctHoldTime']],-targ_size/2),
+            trial[timesig][trial['idx_pretaskHoldTime']]-trial[timesig][trial['idx_ctHoldTime']],
             targ_size,
-            color='C1',
+            color='0.5',
         ))
+
+    if trial['task']=='RTT':
+        if not np.isnan(trial['idx_pretaskHoldTime']) and not np.isnan(trial['idx_goCueTime']):
+            ax.add_patch(Rectangle(
+                (trial[timesig][trial['idx_pretaskHoldTime']],-targ_size/2),
+                trial[timesig][trial['idx_goCueTime']]-trial[timesig][trial['idx_pretaskHoldTime']],
+                targ_size,
+                color='C1',
+            ))
         for idx_targ_start,idx_targ_end,targ_loc in zip(
             trial['idx_rtgoCueTimes'].astype(int),
             trial['idx_rtHoldTimes'].astype(int),
             trial['rt_locations'][:,0]-trial['ct_location'][0],
         ):
-            ax.add_patch(Rectangle(
-                (trial['trialtime'][idx_targ_start],targ_loc-targ_size/2),
-                trial['trialtime'][idx_targ_end]-trial['trialtime'][idx_targ_start],
-                targ_size,
-                color='C1',
-            ))
+            if not np.isnan(idx_targ_start) and not np.isnan(idx_targ_end):
+                ax.add_patch(Rectangle(
+                    (trial[timesig][idx_targ_start],targ_loc-targ_size/2),
+                    trial[timesig][idx_targ_end]-trial[timesig][idx_targ_start],
+                    targ_size,
+                    color='C1',
+                ))
     elif trial['task']=='CST':
-        ax.add_patch(Rectangle(
-            (trial['trialtime'][trial['idx_pretaskHoldTime']],-targ_size/2),
-            trial['trialtime'][trial['idx_goCueTime']]-trial['trialtime'][trial['idx_pretaskHoldTime']],
-            targ_size,
-            color='C0',
-        ))
+        if not np.isnan(trial['idx_pretaskHoldTime']) and not np.isnan(trial['idx_goCueTime']):
+            ax.add_patch(Rectangle(
+                (trial[timesig][trial['idx_pretaskHoldTime']],-targ_size/2),
+                trial[timesig][trial['idx_goCueTime']]-trial[timesig][trial['idx_pretaskHoldTime']],
+                targ_size,
+                color='C0',
+            ))
 
     # cursor
     ax.plot(
-        trial['trialtime'],
+        trial[timesig],
         trial['rel_cursor_pos'][:,0],
         c='b',
         alpha=0.5,
@@ -143,22 +148,26 @@ def plot_hand_trace(trial,ax=None):
     
     # hand
     ax.plot(
-        trial['trialtime'],
+        trial[timesig],
         trial['rel_hand_pos'][:,0],
         c='k',
     )
     ax.set_ylim(-60,60)
     ax.set_ylabel('Hand position (cm)')
-    ax.set_xlabel('Time after go cue (s)')
+    ax.set_xlabel(timesig)
     sns.despine(ax=ax,trim=True)
 
-def plot_hand_velocity(trial,ax=None):
+def plot_hand_velocity(trial,ax=None,timesig='trialtime'):
     if ax is None:
         ax = plt.gca()
 
-    ax.plot([trial['trialtime'][0],trial['trialtime'][-1]],[0,0],'-k')
+    ax.plot([trial[timesig][0],trial[timesig][-1]],[0,0],'-k')
     ax.plot(
-        trial['trialtime'],
+        trial[timesig],
         trial['hand_vel'][:,0],
         color='k',
     )
+
+    ax.set_ylabel('Hand position (cm)')
+    ax.set_xlabel(timesig)
+    sns.despine(ax=ax,trim=True)
