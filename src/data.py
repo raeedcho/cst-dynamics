@@ -312,38 +312,22 @@ def relationize_td(trial_data):
         signals - 'trialtime' indexed DataFrame with signal values
     """
     # start out by making sure that trial_id is index
-    td = trial_data.set_index("trial_id")
+    td = (
+        trial_data
+        .pipe(add_trial_time)
+        # .set_index("trial_id")
+    )
 
     # separate out non-time-varying fields into a separate trial table
-    timevar_cols = td.columns.intersection(pyaldata.get_time_varying_fields(td))
+    timevar_cols = pyaldata.get_time_varying_fields(td)
     trial_info = td.drop(columns=timevar_cols)
-    timevar_data = td[timevar_cols].copy()
-
-    # melt out time information in time-varying column dataframe
-    signals = []
-    for (idx, trial) in timevar_data.iterrows():
-        # split out rows of numpy array
-        signal_dict = {
-            key: list(val_array.copy()) for (key, val_array) in trial.iteritems()
-        }
-        signal_dict["trial_id"] = idx
-        temp = pd.DataFrame(signal_dict)
-
-        # add a timedelta column to DataFrame
-        # temp['trialtime'] = pd.to_timedelta(trial_info.loc[idx,'bin_size']*np.arange(trial[timevar_cols[0]].shape[0]))
-        temp["trialtime"] = pd.to_timedelta(
-            trial_info.loc[idx, "bin_size"]
-            * np.arange(trial[timevar_cols[0]].shape[0]),
-            unit="seconds",
-        )
-
-        signals.append(temp)
-
-    signals = pd.concat(signals)
+    signals = (
+        td
+        .filter(items=['trial_id']+timevar_cols)
+        .explode(timevar_cols)
+        .assign(trialtime=lambda x: pd.to_timedelta(x['trialtime'], unit='seconds'))
+    )
     signals.set_index(["trial_id", "trialtime"], inplace=True)
-
-    # set up a multi-index for trials
-    # td.set_index(['monkey','session_date','trial_id'],inplace=True)
 
     return trial_info, signals
 
