@@ -331,6 +331,66 @@ def relationize_td(trial_data):
 
     return trial_info, signals
 
+def crystallize_dataframe(td,sig_guide=None):
+    '''
+    Transforms a pyaldata-style dataframe into a normal one, where each row
+    is a time point in a trial. This is useful for some manipulations,
+    especially those that involve melting the dataframe.
+
+    Arguments:
+        - td (pd.DataFrame): dataframe in form of PyalData
+        - sig_guide (dict): dictionary of signals with keys corresponding to the signal names
+            in the pyaldata dataframe and values corresponding to the names of each column
+            of the individual signal in the dataframe. If None, all signals are included,
+            with columns labeled 0-N, where N is the number of columns in the signal.
+
+    Returns:
+        - (pd.DataFrame): crystallized dataframe with hierarchical index on both axes:
+            axis 0: trial id, time bin in trial
+            axis 1: signal name, signal dimension
+    '''
+    # TODO: check that signals are in the dataframe and are valid signals
+
+    if sig_guide is None:
+        sig_guide = {sig: None for sig in pyaldata.get_time_varying_fields(td)}
+
+    if type(sig_guide) is list:
+        sig_guide = {sig: None for sig in sig_guide}
+
+    assert type(sig_guide) is dict, "sig_guide must be a dictionary"
+
+    df = pd.concat(
+        [
+            pd.concat([pd.DataFrame(trial[sig],columns=guide) for sig,guide in sig_guide.items()], axis=1, keys=sig_guide.keys()) 
+            for _,trial in td.iterrows()
+        ],
+        axis=0,
+        keys=td['trial_id'],
+    )
+    df.index.rename('Time bin',level=1,inplace=True)
+    return df
+
+def extract_metaframe(td,metacols=['trial_id']):
+    '''
+    Extracts a metaframe from a trial dataframe.
+
+    Arguments:
+        - td (pd.DataFrame): dataframe in form of PyalData
+        - metacols (list of str): columns to include in the metaframe
+            Note: if trial_id is not in metacols, it will be added
+
+    Returns:
+        - (pd.DataFrame): metaframe with hierarchical index on both axes:
+            axis 0: trial id
+            axis 1: column name
+    '''
+    if 'trial_id' not in metacols:
+        metacols.insert(0,'trial_id')
+
+    meta_df = td.filter(items=metacols).set_index('trial_id')
+    meta_df.columns = pd.MultiIndex.from_product([['meta'],meta_df.columns])
+    # meta_df.columns = pd.MultiIndex.from_tuples(list(zip(meta_df.columns,meta_df.columns)))
+    return meta_df
 
 @pyaldata.copy_td
 def add_trial_time(trial_data, ref_event=None, column_name="trialtime"):
