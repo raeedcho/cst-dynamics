@@ -2,11 +2,64 @@
 
 import numpy as np
 import pandas as pd
-from sklearn.decomposition import PCA
+from sklearn.decomposition import PCA, TruncatedSVD
 from sklearn.linear_model import LinearRegression
 import scipy.linalg as la
 
 from . import util
+
+def find_joint_subspace(df,signal,condition='task',num_dims=15,remove_mean=False,orthogonalize=True):
+    '''
+    Find a joint subspace given multiple datasets in the same full-D space 
+    and a number of dimensions to use for each dataset.
+
+    This function will first reduce the dimensionality of the datasets to num_dims using PCA,
+    then concatenate the resulting PCs to form the joint subspace. Lastly, it will orthogonalize
+    the joint subspace using SVD. The result will be a projection matrix from full-D space to
+    the joint subspace (n_features x (num_dims*num_conditions)).
+
+    Note: This function will not remove the mean of the datasets before performing PCA by default.
+
+    Arguments:
+        df - (pd.DataFrame) DataFrame containing data (e.g. firing rates) and condition (e.g. task).
+            Data will be grouped by the provided condition column to form multiple datasets.
+            Each element of df[signal] is a numpy array with features along columns
+            and optionally observations along rows. These arrays will be stacked via
+            np.row_stack() to form a single data matrix for each dataset.
+        signal - (str) name of column in df containing data
+        condition - (str) name of column in df containing condition labels
+        num_dims - (int) number of dimensions to use for each data matrix to compose
+            the joint subspace.
+        remove_mean - (bool) whether or not to remove the mean of X and Y before
+            performing PCA. Default is False
+        orthogonalize - (bool) whether or not to orthogonalize the joint subspace
+            using SVD. Default is True.
+
+    Returns:
+        (numpy array) projection matrix from full-D space to joint subspace
+            (n_features x (num_dims*num_conditions))
+    '''
+    def get_pcs(df):
+        if remove_mean:
+            dim_reduction_model = PCA(n_components=num_dims)
+        else:
+            dim_reduction_model = TruncatedSVD(n_components=num_dims)
+
+        dim_reduction_model.fit(np.row_stack(df[signal]))
+        return dim_reduction_model.components_
+
+    separate_pcs = (
+        df
+        .groupby(condition)
+        .apply(get_pcs)
+    )
+    
+    if orthogonalize:
+        _,_,vt = np.linalg.svd(np.row_stack(separate_pcs),full_matrices=False)
+    else:
+        vt = np.row_stack(separate_pcs)
+
+    return vt.T
 
 def subspace_overlap_index(X,Y,num_dims=10):
     '''
