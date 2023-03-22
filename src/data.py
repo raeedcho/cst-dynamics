@@ -169,7 +169,7 @@ def trim_nans(trial_data, ref_signals=["rel_hand_pos"]):
     for trial_id in td_trimmed.index:
         td_trimmed.loc[trial_id, "idx_endTime"] = np.column_stack(
             [td_trimmed.loc[trial_id,sig] for sig in ref_signals]
-            ).shape[0]
+        ).shape[0]
 
     return td_trimmed
 
@@ -303,7 +303,7 @@ def mask_neural_data(td, array, mask):
 
 
 @pyaldata.copy_td
-def relationize_td(trial_data):
+def relationize_td(td):
     """
     Split out trial info and time-varying signals into their own tables
 
@@ -313,14 +313,13 @@ def relationize_td(trial_data):
     """
     # start out by making sure that trial_id is index
     td = (
-        trial_data
+        td
         .pipe(add_trial_time)
-        # .set_index("trial_id")
     )
 
     # separate out non-time-varying fields into a separate trial table
     timevar_cols = pyaldata.get_time_varying_fields(td)
-    trial_info = td.drop(columns=timevar_cols)
+    trial_info = td.drop(columns=timevar_cols).set_index('trial_id')
     signals = (
         td
         .filter(items=['trial_id']+timevar_cols)
@@ -331,7 +330,7 @@ def relationize_td(trial_data):
 
     return trial_info, signals
 
-def crystallize_dataframe(td,sig_guide=None):
+def crystalize_dataframe(td,sig_guide=None):
     '''
     Transforms a pyaldata-style dataframe into a normal one, where each row
     is a time point in a trial. This is useful for some manipulations,
@@ -370,27 +369,83 @@ def crystallize_dataframe(td,sig_guide=None):
     df.index.rename('Time bin',level=1,inplace=True)
     return df
 
-def extract_metaframe(td,metacols=['trial_id']):
+def extract_metaframe(td,metacols=None):
     '''
     Extracts a metaframe from a trial dataframe.
 
     Arguments:
         - td (pd.DataFrame): dataframe in form of PyalData
         - metacols (list of str): columns to include in the metaframe
-            Note: if trial_id is not in metacols, it will be added
+            Default behavior (if None) is to get all columns that are not time-varying signals
 
     Returns:
         - (pd.DataFrame): metaframe with hierarchical index on both axes:
             axis 0: trial id
             axis 1: column name
     '''
-    if 'trial_id' not in metacols:
-        metacols.insert(0,'trial_id')
+    if metacols is None:
+        metacols = set(td.columns) - set(pyaldata.get_time_varying_fields(td))
 
     meta_df = td.filter(items=metacols).set_index('trial_id')
-    meta_df.columns = pd.MultiIndex.from_product([['meta'],meta_df.columns])
-    # meta_df.columns = pd.MultiIndex.from_tuples(list(zip(meta_df.columns,meta_df.columns)))
+    meta_df.columns = pd.MultiIndex.from_product([meta_df.columns,['meta']])
     return meta_df
+
+def extract_unit_guides(td,array='MC'):
+    '''
+    Extracts a unit guide dataframe from a trial data dataframe.
+
+    Note: if this is Prez data, all we need is MC unit guide, since other arrays
+    are subsets of MC (M1 is channels 33-96 and PMd is channels 1-32;97-128).
+
+    Arguments:
+        - td (pd.DataFrame): dataframe in form of PyalData
+        - array (str): name of array to extract unit guide from
+
+    Returns:
+        - (pd.DataFrame): unit guide dataframe with index 0-N, where N is the number
+            of units in the array and columns {'channel','unit','array'}
+    '''
+    
+    if td['monkey'].iloc[0] == 'Prez':
+        def which_array(channel):
+            if 32<channel<=96:
+                return 'M1'
+            else:
+                return 'PMd'
+    else:
+        Warning('Array splitting only defined for Prez data currently.')
+        def which_array(channel):
+            return array
+
+    unit_guide = (
+        pd.DataFrame(
+            td[f'{array}_unit_guide'].values[0],
+            columns=['channel','unit'],
+        )
+        .assign(array=lambda x: x['channel'].apply(which_array))
+    )
+    return unit_guide
+
+def extract_trial_events(td,events=None):
+    '''
+    Extracts a trial events dataframe from a trial data dataframe.
+
+    Arguments:
+        - td (pd.DataFrame): dataframe in form of PyalData
+        - events (list of str): events to include in the trial events dataframe
+            Default behavior (if None) is to get all events in the dataframe
+
+    Returns:
+        - (pd.DataFrame): trial events dataframe with hierarchical index on both axes:
+            axis 0: trial id
+            axis 1: event name
+    '''
+    if events is None:
+        events = set(td.columns) - set(pyaldata.get_time_varying_fields(td))
+
+    events_df = td.filter(items=events).set_index('trial_id')
+    events_df.columns = pd.MultiIndex.from_product([events_df.columns,['event']])
+    return events_df
 
 @pyaldata.copy_td
 def add_trial_time(trial_data, ref_event=None, column_name="trialtime"):
