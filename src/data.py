@@ -325,10 +325,35 @@ def relationize_td(td):
         .filter(items=['trial_id']+timevar_cols)
         .explode(timevar_cols)
         .assign(trialtime=lambda x: pd.to_timedelta(x['trialtime'], unit='seconds'))
+        .set_index(['trial_id','trialtime'])
     )
-    signals.set_index(["trial_id", "trialtime"], inplace=True)
 
     return trial_info, signals
+
+@pyaldata.copy_td
+def explode_td(td):
+    '''
+    Explodes a pyaldata-style dataframe into a normal one, where each row
+    is a time point in a trial.
+
+    Arguments:
+        - td (pd.DataFrame): dataframe in form of PyalData
+
+    Returns:
+        - (pd.DataFrame): exploded dataframe with hierarchical index:
+            axis 0: trial id, time bin in trial
+            axis 1: signal name
+    '''
+    timevar_cols = pyaldata.get_time_varying_fields(td)
+    exp_td = (
+        td
+        .pipe(add_trial_time)
+        .explode(timevar_cols)
+        .assign(trialtime=lambda x: pd.to_timedelta(x['trialtime'], unit='seconds'))
+        .set_index(['trial_id','trialtime'])
+    )
+
+    return exp_td
 
 def crystalize_dataframe(td,sig_guide=None):
     '''
