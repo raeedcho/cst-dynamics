@@ -37,12 +37,35 @@ td = (
     .assign(**{'trialtime': lambda x: x['Time from go cue (s)']})
     .pipe(pyaldata.soft_normalize_signal,signals=['lfads_rates','MC_rates'])
     .pipe(src.data.remove_baseline_rates,signals=['MC_rates','lfads_rates'])
-    .pipe(pyaldata.dim_reduce,TruncatedSVD(n_components=15),'MC_rates','MC_pca')
-    .pipe(pyaldata.dim_reduce,TruncatedSVD(n_components=15),'lfads_rates','lfads_pca')
 )
 
-#%% Context space
+# trial_data = src.data.crystalize_dataframe(td,sig_guide={
+#     'MC_rates': [f'ch{chan}u{unit}' for chan,unit in td['MC_unit_guide'].values[0]],
+#     'lfads_rates': [f'ch{chan}u{unit}' for chan,unit in td['MC_unit_guide'].values[0]],
+#     'lfads_inputs': None,
+#     'rel_cursor_pos': None,
+#     'rel_hand_pos': None,
+#     'hand_vel': None,
+#     'cursor_vel': None,
+#     'hand_speed': None,
+#     'hand_acc': None,
+#     'Time from go cue (s)': None,
+#     'Time from task cue (s)': None,
+# })
+# trial_info = src.data.extract_metaframe(td,metacols=['trial_id','task','lambda','ct_location','result','rt_locations'])
+# full_td = trial_info.join(trial_data)
+
+#%% Find joint subspace
+exp_td = src.data.explode_td(td)
 signal = 'lfads_rates'
+num_dims = 15
+joint_subspace_model = src.models.JointSubspace(n_comps_per_cond=num_dims).fit(np.row_stack(exp_td[signal]),exp_td['task'])
+td = td.assign(**{
+    signal.replace('rates','pca'): [joint_subspace_model.transform(s) for s in td[signal]]
+})
+
+#%% Context space
+signal = 'lfads_pca'
 tonic_context_model = LinearDiscriminantAnalysis()
 td_models = src.data.rebin_data(td,new_bin_size=0.100)
 tonic_context_model.fit(
@@ -138,7 +161,7 @@ sns.despine(fig=fig,trim=True)
 
 # %% decoding
 
-signal = 'MC_pca'
+signal = 'lfads_pca'
 def get_test_labels(df):
     gss = GroupShuffleSplit(n_splits=1,test_size=0.25)
     _,test = next(gss.split(
@@ -271,7 +294,7 @@ This code will go through the following steps:
 - Calculate the covariance matrices for each task
 '''
 
-signal = 'lfads_rates'
+signal = 'lfads_pca'
 num_dims = 15
 td_trim = (
     td
@@ -298,29 +321,18 @@ td_trim = (
     .reset_index(drop=True)
 )
 
-def get_pcs(df):
-    pca = PCA(n_components=num_dims)
-    pca.fit(np.row_stack(df[signal]))
-    return pca.components_
-
-separate_pcs = (
-    td_trim
-    .groupby('task')
-    .apply(get_pcs)
-)
-_,_,vt = np.linalg.svd(np.row_stack(separate_pcs),full_matrices=False)
-
-def project_data(df):
-    sig = np.row_stack(df[signal])
-    return np.dot(sig-sig.mean(axis=0),vt.T)
-
 covar_mats = (
     td_trim
     .groupby('task')
-    .apply(lambda df: pd.DataFrame(data=np.cov(project_data(df),rowvar=False)))
+    .apply(lambda df: pd.DataFrame(data=np.cov(np.row_stack(df[signal]),rowvar=False)))
 )
 
-covar_mats.to_csv(f"../results/subspace_splitting/Prez_20220721_CSTRTT_{signal.replace('_rates','')}_covar_mats.csv")
+for task in ['CST','RTT']:
+    covar_mats.loc[task].to_csv(
+        f"../results/subspace_splitting/Prez_20220721_{task}_{signal.replace('_rates','')}_covar_mat.csv",
+        header=False,
+        index=False,
+    )
 
 # %% import subpsace splitter data
 
