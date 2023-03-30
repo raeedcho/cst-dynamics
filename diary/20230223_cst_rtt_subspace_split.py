@@ -324,7 +324,7 @@ td_trim = (
 covar_mats = (
     td_trim
     .groupby('task')
-    .apply(lambda df: pd.DataFrame(data=np.cov(np.row_stack(df[signal]),rowvar=False)))
+    .apply(lambda df: pd.DataFrame(data=np.row_stack(df[signal]).T @ np.row_stack(df[signal]) / df.shape[0]))
 )
 
 for task in ['CST','RTT']:
@@ -355,25 +355,11 @@ shared_proj = Q['shared']
 # project data through the joint space into the split subspaces
 td_proj = (
     td_trim.copy()
-    .join(
-        (
-            td_trim
-            .groupby('task')
-            [signal]
-            .apply(lambda s: s.mean(axis=0))
-        ),
-        on='task',
-        rsuffix='_mean',
-    )
     .assign(**{
-        f'centered_{signal}': lambda df: df[signal] - df[f'{signal}_mean'],
-        f'joint_proj_{signal}': lambda df: df.apply(lambda s: np.dot(s[f'centered_{signal}'],vt.T),axis=1),
-        f'{signal}_cst_unique': lambda df: df.apply(lambda s: np.dot(s[f'joint_proj_{signal}'],cst_unique_proj),axis=1),
-        f'{signal}_rtt_unique': lambda df: df.apply(lambda s: np.dot(s[f'joint_proj_{signal}'],rtt_unique_proj),axis=1),
-        f'{signal}_shared': lambda df: df.apply(lambda s: np.dot(s[f'joint_proj_{signal}'],shared_proj),axis=1),
+        f'{signal}_cst_unique': lambda df: df.apply(lambda s: np.dot(s[signal],cst_unique_proj),axis=1),
+        f'{signal}_rtt_unique': lambda df: df.apply(lambda s: np.dot(s[signal],rtt_unique_proj),axis=1),
+        f'{signal}_shared': lambda df: df.apply(lambda s: np.dot(s[signal],shared_proj),axis=1),
     })
-    .drop(columns=[signal,f'{signal}_mean',f'centered_{signal}',f'joint_proj_{signal}'])
-
     .set_index(['trial_id','Time from go cue (s)'])
 )
 
@@ -410,7 +396,7 @@ rtt_trace_plot.display()
 max_abs_hand_vel = np.percentile(np.abs(td_proj['Hand velocity (cm/s)']),95)
 
 def plot_k3d_trace(trial,plot):
-    neural_trace = np.row_stack(trial['lfads_rates_rtt_unique'])
+    neural_trace = np.row_stack(trial['lfads_pca_shared'])
     plot+=k3d.line(
         neural_trace[:,0:3].astype(np.float32),
         shader='mesh',
@@ -449,9 +435,9 @@ td_subspace_split = (
             td_proj
             .groupby('trial_id')
             .agg({
-                'lfads_rates_cst_unique': np.row_stack,
-                'lfads_rates_rtt_unique': np.row_stack,
-                'lfads_rates_shared': np.row_stack,
+                'lfads_pca_cst_unique': np.row_stack,
+                'lfads_pca_rtt_unique': np.row_stack,
+                'lfads_pca_shared': np.row_stack,
             })
         ),
         on='trial_id',
@@ -463,11 +449,11 @@ def plot_trial_split_space(trial_to_plot,ax_list):
     src.plot.plot_hand_trace(trial_to_plot,ax=ax_list[0],timesig='Time from go cue (s)')
     src.plot.plot_hand_velocity(trial_to_plot,ax_list[1],timesig='Time from go cue (s)')
 
-    sig_list = ['lfads_rates_shared','lfads_rates_cst_unique','lfads_rates_rtt_unique']
+    sig_list = ['lfads_pca_shared','lfads_pca_cst_unique','lfads_pca_rtt_unique']
     sig_colors = {
-        'lfads_rates_cst_unique':'C0',
-        'lfads_rates_rtt_unique':'C1',
-        'lfads_rates_shared': 'C4',
+        'lfads_pca_cst_unique':'C0',
+        'lfads_pca_rtt_unique':'C1',
+        'lfads_pca_shared': 'C4',
     }
 
     rownum = 2
@@ -488,5 +474,12 @@ fig,axs = plt.subplots(19,len(trials_to_plot),sharex=True,sharey='row',figsize=(
 fig.tight_layout()
 for colnum,(trial_id,trial) in enumerate(trials_to_plot.iterrows()):
     plot_trial_split_space(trial,axs[:,colnum])
-# %%
+# %% Plot average traces
+td_subspace_split_avg = pyaldata.trial_average(td_subspace_split,condition='task',ref_field='lfads_pca')
+fig,axs = plt.subplots(19,len(td_subspace_split_avg),sharex=True,sharey='row',figsize=(10,18))
+fig.tight_layout()
+for colnum,(task,trial) in enumerate(td_subspace_split_avg.iterrows()):
+    plot_trial_split_space(trial,axs[:,colnum])
 
+
+# %%
