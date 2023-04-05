@@ -2,7 +2,7 @@ import ssa
 import numpy as np
 import torch
 from sklearn.base import TransformerMixin, BaseEstimator
-from sklearn.decomposition import TruncatedSVD
+from sklearn.decomposition import TruncatedSVD,PCA
 
 class SSA(object):
     def __init__(
@@ -135,36 +135,50 @@ class JointSubspace(BaseEstimator,TransformerMixin):
         (numpy array) projection matrix from full-D space to joint subspace
             (n_features x (num_dims*num_conditions))
     '''
-    def __init__(self,n_comps_per_cond=2,orthogonalize=True):
+    def __init__(self,n_comps_per_cond=2,orthogonalize=True,signal=None,condition=None):
         '''
         Initiates JointSubspace model.
         '''
+        assert signal is not None, "Must provide signal column name"
+        assert condition is not None, "Must provide condition column name"
+
         self.n_comps_per_cond = n_comps_per_cond
         self.orthogonalize = orthogonalize
+        self.signal = signal
+        self.condition = condition
 
-    def fit(self,X,y):
+    def fit(self,X,y=None):
         '''
         Fits the joint subspace model.
 
         Arguments:
-            X - (array-like of shape (n_samples,n_features))
-                Data will be grouped by the provided y argument to form multiple datasets.
-            y - (array-like of shape (n_samples,))
-                Condition labels corresponding to each sample in X. If None, then this model is
-                simply a TruncatedSVD model.
+            X - (pd.DataFrame) DataFrame containing data (e.g. firing rates) and condition (e.g. task
+                Data will be grouped by the provided condition column to form multiple datasets.
+            y - unused
 
         Returns:
             self - the fitted transformer object
         '''
 
         # group data by condition
-        self.conditions_ = np.unique(y)
+        self.conditions_ = np.unique(X[self.condition])
         self.n_conditions_ = len(self.conditions_)
         self.n_components_ = self.n_comps_per_cond*self.n_conditions_
+        self.cond_means_ = (
+            X
+            .groupby(self.condition)
+            [self.signal]
+            .apply(lambda x: np.mean(np.row_stack(x),axis=0))
+        )
 
-        self.models_ = {cond:TruncatedSVD(n_components=self.n_comps_per_cond).fit(X[y==cond]) for cond in self.conditions_}
+        dim_red_models = (
+            X
+            .groupby(self.condition)
+            [self.signal]
+            .apply(lambda x: PCA(n_components=self.n_comps_per_cond).fit(np.row_stack(x)))
+        )
 
-        proj_mat = np.row_stack([model.components_ for model in self.models_.values()])
+        proj_mat = np.row_stack([model.components_ for model in dim_red_models])
         if self.orthogonalize:
             _,_,proj_mat = np.linalg.svd(proj_mat,full_matrices=False)
 
@@ -176,28 +190,21 @@ class JointSubspace(BaseEstimator,TransformerMixin):
         Projects data into joint subspace.
 
         Arguments:
-            X - (array-like of shape (n_samples,n_features))
+            X - (pd.DataFrame)
+                DataFrame containing data (e.g. firing rates) and condition (e.g. task)
 
         Returns:
-            (array-like of shape (n_samples,n_components)) projected data
+            (pd.DataFrame) New DataFrame with an additional column containing the
+                projected data (column name is f'{self.signal}_joint_pca')
         '''
         assert hasattr(self,'P_'), "Model not yet fitted"
 
-        return X @ self.P_
-
-    def fit_transform(self,X,y):
-        '''
-        Fits the model and projects data into joint subspace.
-
-        Arguments:
-            X - (array-like of shape (n_samples,n_features))
-                Data will be grouped by the provided y argument to form multiple datasets.
-            y - (array-like of shape (n_samples,))
-                Condition labels corresponding to each sample in X. If None, then this model is
-                simply a TruncatedSVD model.
-
-        Returns:
-            (array-like of shape (n_samples,n_components)) projected data
-        '''
-        return self.fit(X,y).transform(X)
-
+        return (
+            X
+            .join(self.cond_means_,on=self.condition,rsuffix='_mean')
+            .assign(**{
+                f'centered_{self.signal}': lambda x: x[self.signal] - x[f'{self.signal}_mean'],
+                f'{self.signal}_joint_pca': lambda df: df.apply(lambda s: np.dot(s[f'centered_{self.signal}'],self.P_),axis=1),
+            })
+            .drop(columns=[f'{self.signal}_mean',f'centered_{self.signal}'])
+        )

@@ -31,13 +31,23 @@ load_params = {
     ),
     'bin_size': 0.01,
 }
+joint_pca_model = src.models.JointSubspace(n_comps_per_cond=15,signal='lfads_rates',condition='task')
 td = (
     src.data.load_clean_data(**load_params)
     .query('task=="RTT" | task=="CST"')
     .assign(**{'trialtime': lambda x: x['Time from go cue (s)']})
     .pipe(pyaldata.soft_normalize_signal,signals=['lfads_rates','MC_rates'])
     .pipe(src.data.remove_baseline_rates,signals=['MC_rates','lfads_rates'])
+    .pipe(pyaldata.dim_reduce,model=TruncatedSVD(n_components=15),signal='MC_rates',out_fieldname='MC_svd')
+    .pipe(pyaldata.dim_reduce,model=TruncatedSVD(n_components=15),signal='lfads_rates',out_fieldname='lfads_svd')
+    .pipe(pyaldata.dim_reduce,model=PCA(n_components=15),signal='MC_rates',out_fieldname='MC_pca')
+    .pipe(pyaldata.dim_reduce,model=PCA(n_components=15),signal='lfads_rates',out_fieldname='lfads_pca')
+    .pipe(joint_pca_model.fit_transform)
 )
+
+# Data pipeline for decoding analysis
+# - Soft normalize
+# - Remove baseline
 
 # trial_data = src.data.crystalize_dataframe(td,sig_guide={
 #     'MC_rates': [f'ch{chan}u{unit}' for chan,unit in td['MC_unit_guide'].values[0]],
@@ -56,16 +66,16 @@ td = (
 # full_td = trial_info.join(trial_data)
 
 #%% Find joint subspace
-exp_td = src.data.explode_td(td)
-signal = 'lfads_rates'
-num_dims = 15
-joint_subspace_model = src.models.JointSubspace(n_comps_per_cond=num_dims).fit(np.row_stack(exp_td[signal]),exp_td['task'])
-td = td.assign(**{
-    signal.replace('rates','pca'): [joint_subspace_model.transform(s) for s in td[signal]]
-})
+# exp_td = src.data.explode_td(td)
+# signal = 'lfads_rates'
+# num_dims = 15
+# joint_subspace_model = src.models.JointSubspace(n_comps_per_cond=num_dims).fit(np.row_stack(exp_td[signal]),exp_td['task'])
+# td = td.assign(**{
+#     signal.replace('rates','pca'): [joint_subspace_model.transform(s) for s in td[signal]]
+# })
 
 #%% Context space
-signal = 'lfads_pca'
+signal = 'lfads_rates'
 tonic_context_model = LinearDiscriminantAnalysis()
 td_models = src.data.rebin_data(td,new_bin_size=0.100)
 tonic_context_model.fit(
@@ -161,7 +171,7 @@ sns.despine(fig=fig,trim=True)
 
 # %% decoding
 
-signal = 'lfads_pca'
+signal = 'lfads_rates_joint_pca'
 def get_test_labels(df):
     gss = GroupShuffleSplit(n_splits=1,test_size=0.25)
     _,test = next(gss.split(
@@ -294,7 +304,7 @@ This code will go through the following steps:
 - Calculate the covariance matrices for each task
 '''
 
-signal = 'lfads_pca'
+signal = 'lfads_rates_joint_pca'
 num_dims = 15
 td_trim = (
     td
@@ -329,7 +339,7 @@ covar_mats = (
 
 for task in ['CST','RTT']:
     covar_mats.loc[task].to_csv(
-        f"../results/subspace_splitting/Prez_20220721_{task}_{signal.replace('_rates','')}_covar_mat.csv",
+        f"../results/subspace_splitting/Prez_20220721_{task}_{signal}_covar_mat.csv",
         header=False,
         index=False,
     )
@@ -337,7 +347,7 @@ for task in ['CST','RTT']:
 # %% import subpsace splitter data
 
 matfile = sio.loadmat(
-    f"../results/subspace_splitting/Prez_20220721_CSTRTT_{signal.replace('_rates','')}_subspacesplitter.mat",
+    f"../results/subspace_splitting/Prez_20220721_CSTRTT_{signal}_subspacesplitter.mat",
     squeeze_me=True,
 )
 
@@ -435,9 +445,9 @@ td_subspace_split = (
             td_proj
             .groupby('trial_id')
             .agg({
-                'lfads_pca_cst_unique': np.row_stack,
-                'lfads_pca_rtt_unique': np.row_stack,
-                'lfads_pca_shared': np.row_stack,
+                f'{signal}_cst_unique': np.row_stack,
+                f'{signal}_rtt_unique': np.row_stack,
+                f'{signal}_shared': np.row_stack,
             })
         ),
         on='trial_id',
@@ -449,11 +459,11 @@ def plot_trial_split_space(trial_to_plot,ax_list):
     src.plot.plot_hand_trace(trial_to_plot,ax=ax_list[0],timesig='Time from go cue (s)')
     src.plot.plot_hand_velocity(trial_to_plot,ax_list[1],timesig='Time from go cue (s)')
 
-    sig_list = ['lfads_pca_shared','lfads_pca_cst_unique','lfads_pca_rtt_unique']
+    sig_list = [f'{signal}_shared',f'{signal}_cst_unique',f'{signal}_rtt_unique']
     sig_colors = {
-        'lfads_pca_cst_unique':'C0',
-        'lfads_pca_rtt_unique':'C1',
-        'lfads_pca_shared': 'C4',
+        f'{signal}_cst_unique':'C0',
+        f'{signal}_rtt_unique':'C1',
+        f'{signal}_shared': 'C4',
     }
 
     rownum = 2
