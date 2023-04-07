@@ -31,7 +31,7 @@ load_params = {
     ),
     'bin_size': 0.01,
 }
-joint_pca_model = src.models.JointSubspace(n_comps_per_cond=15,signal='lfads_rates',condition='task')
+joint_pca_model = src.models.JointSubspace(n_comps_per_cond=15,signal='lfads_rates',condition='task',remove_latent_offsets=False)
 td = (
     src.data.load_clean_data(**load_params)
     .query('task=="RTT" | task=="CST"')
@@ -295,7 +295,6 @@ sns.heatmap(
 # %% Export data for subspace splitting in MATLAB
 '''
 This code will go through the following steps:
-- Restrict to only data from -300ms to 5000ms from the go cue
 - Run a separated-rejoined PCA on CST and RTT data:
     - Run PCA separately on RTT and CST data in this epoch
     - Concatenate the PC weights from the two tasks
@@ -305,37 +304,21 @@ This code will go through the following steps:
 '''
 
 signal = 'lfads_rates_joint_pca'
+remove_task_mean_activity = True
 num_dims = 15
-td_trim = (
-    td
-    .assign(
-        **{'Hand velocity (cm/s)': lambda x: x.apply(lambda y: y['hand_vel'][:,0],axis=1)}
-    )
-    .filter(items=[
-        'trial_id',
-        'task',
-        'Time from go cue (s)',
-        'Hand velocity (cm/s)',
-        signal,
-    ])
-    .explode([
-        'Time from go cue (s)',
-        'Hand velocity (cm/s)',
-        signal,
-    ])
-    .astype({
-        'Time from go cue (s)': float,
-        'Hand velocity (cm/s)': float,
-    })
-    .query('`Time from go cue (s)`>=-0.3 & `Time from go cue (s)`<5')
-    .reset_index(drop=True)
-)
 
-covar_mats = (
-    td_trim
-    .groupby('task')
-    .apply(lambda df: pd.DataFrame(data=np.row_stack(df[signal]).T @ np.row_stack(df[signal]) / df.shape[0]))
-)
+if remove_task_mean_activity:
+    covar_mats = (
+        td
+        .groupby('task')
+        .apply(lambda df: pd.DataFrame(data=np.cov(np.row_stack(df[signal]),rowvar=False)))
+    )
+else:
+    covar_mats = (
+        td
+        .groupby('task')
+        .apply(lambda df: pd.DataFrame(data=np.row_stack(df[signal]).T @ np.row_stack(df[signal]) / df.shape[0]))
+    )
 
 for task in ['CST','RTT']:
     covar_mats.loc[task].to_csv(
@@ -364,14 +347,56 @@ shared_proj = Q['shared']
 
 # project data through the joint space into the split subspaces
 td_proj = (
-    td_trim.copy()
+    td
     .assign(**{
         f'{signal}_cst_unique': lambda df: df.apply(lambda s: np.dot(s[signal],cst_unique_proj),axis=1),
         f'{signal}_rtt_unique': lambda df: df.apply(lambda s: np.dot(s[signal],rtt_unique_proj),axis=1),
         f'{signal}_shared': lambda df: df.apply(lambda s: np.dot(s[signal],shared_proj),axis=1),
     })
-    .set_index(['trial_id','Time from go cue (s)'])
 )
+
+# %%
+# A couple things to do:
+#   - Check how aligned decoder axis is with each subspace
+#   - Transfer these subspaces back to original data structure to plot hand position and target info
+
+# %% Plot individual traces
+def plot_trial_split_space(trial_to_plot,ax_list):
+    src.plot.plot_hand_trace(trial_to_plot,ax=ax_list[0],timesig='Time from go cue (s)')
+    src.plot.plot_hand_velocity(trial_to_plot,ax_list[1],timesig='Time from go cue (s)')
+
+    sig_list = [f'{signal}_shared',f'{signal}_cst_unique',f'{signal}_rtt_unique']
+    sig_colors = {
+        f'{signal}_cst_unique':'C0',
+        f'{signal}_rtt_unique':'C1',
+        f'{signal}_shared': 'C4',
+    }
+
+    rownum = 2
+    for sig in sig_list:
+        for dim in range(trial[sig].shape[1]):
+            ax = ax_list[rownum]
+            ax.plot(trial_to_plot['Time from go cue (s)'][[0,-1]],[0,0],color='k')
+            ax.plot(trial_to_plot['Time from go cue (s)'],trial_to_plot[sig][:,dim],color=sig_colors[sig])
+            # ax.set_yticks([])
+            ax.plot([0,0],ax.get_ylim(),color='k',linestyle='--')
+            sns.despine(ax=ax,trim=True)
+            rownum+=1
+
+    ax_list[-1].set_xlabel('Time from go cue (s)')
+
+trials_to_plot = td_proj.groupby('task').sample(n=1).set_index('trial_id')
+fig,axs = plt.subplots(19,len(trials_to_plot),sharex=True,sharey='row',figsize=(10,18))
+fig.tight_layout()
+for colnum,(trial_id,trial) in enumerate(trials_to_plot.iterrows()):
+    plot_trial_split_space(trial,axs[:,colnum])
+
+# %% Plot average traces (they don't really make any sense though...)
+td_subspace_split_avg = pyaldata.trial_average(td_subspace_split,condition='task',ref_field='lfads_pca')
+fig,axs = plt.subplots(19,len(td_subspace_split_avg),sharex=True,sharey='row',figsize=(10,18))
+fig.tight_layout()
+for colnum,(task,trial) in enumerate(td_subspace_split_avg.iterrows()):
+    plot_trial_split_space(trial,axs[:,colnum])
 
 #%% k3d plots
 cst_trace_plot = k3d.plot(name='CST smoothed neural traces')
@@ -405,91 +430,24 @@ rtt_trace_plot.display()
 #%% k3d plots with explode-y td
 max_abs_hand_vel = np.percentile(np.abs(td_proj['Hand velocity (cm/s)']),95)
 
-def plot_k3d_trace(trial,plot):
-    neural_trace = np.row_stack(trial['lfads_pca_shared'])
+def plot_k3d_trace(trial,plot,color=None):
+    neural_trace = np.row_stack(trial[f'{signal}_shared'])
     plot+=k3d.line(
         neural_trace[:,0:3].astype(np.float32),
         shader='mesh',
         width=3e-3,
-        attribute=trial['Hand velocity (cm/s)'],
-        color_map=k3d.paraview_color_maps.Erdc_divHi_purpleGreen,
-        color_range=[-max_abs_hand_vel,max_abs_hand_vel],
+        color=color,
+        # attribute=trial['Hand velocity (cm/s)'],
+        # color_map=k3d.paraview_color_maps.Erdc_divHi_purpleGreen,
+        # color_range=[-max_abs_hand_vel,max_abs_hand_vel],
     )
     plot.display()
 
 # plot traces
 cst_trial = td_proj.loc[227]
 rtt_trial = td_proj.loc[228]
-cst_trace_plot = k3d.plot(name='CST neural traces in shared space')
-rtt_trace_plot = k3d.plot(name='RTT neural traces in shared space')
-plot_k3d_trace(cst_trial,cst_trace_plot)
-plot_k3d_trace(rtt_trial,rtt_trace_plot)
-
-
-# %%
-# A couple things to do:
-#   - Check how aligned decoder axis is with each subspace
-#   - Transfer these subspaces back to original data structure to plot hand position and target info
-
-#%% Transfer subspace rates back to original data struct (td)
-
-td_subspace_split = (
-    td
-    .pipe(pyaldata.restrict_to_interval,warn_per_trial=True,epoch_fun=src.util.generate_realtime_epoch_fun(
-        start_point_name='idx_goCueTime',
-        rel_start_time=-0.3,
-        rel_end_time=5,
-    ))
-    .join(
-        (
-            td_proj
-            .groupby('trial_id')
-            .agg({
-                f'{signal}_cst_unique': np.row_stack,
-                f'{signal}_rtt_unique': np.row_stack,
-                f'{signal}_shared': np.row_stack,
-            })
-        ),
-        on='trial_id',
-    )
-)
-
-# %% Plot individual traces
-def plot_trial_split_space(trial_to_plot,ax_list):
-    src.plot.plot_hand_trace(trial_to_plot,ax=ax_list[0],timesig='Time from go cue (s)')
-    src.plot.plot_hand_velocity(trial_to_plot,ax_list[1],timesig='Time from go cue (s)')
-
-    sig_list = [f'{signal}_shared',f'{signal}_cst_unique',f'{signal}_rtt_unique']
-    sig_colors = {
-        f'{signal}_cst_unique':'C0',
-        f'{signal}_rtt_unique':'C1',
-        f'{signal}_shared': 'C4',
-    }
-
-    rownum = 2
-    for sig in sig_list:
-        for dim in range(trial[sig].shape[1]):
-            ax = ax_list[rownum]
-            ax.plot(trial_to_plot['Time from go cue (s)'][[0,-1]],[0,0],color='k')
-            ax.plot(trial_to_plot['Time from go cue (s)'],trial_to_plot[sig][:,dim],color=sig_colors[sig])
-            # ax.set_yticks([])
-            ax.plot([0,0],ax.get_ylim(),color='k',linestyle='--')
-            sns.despine(ax=ax,trim=True)
-            rownum+=1
-
-    ax_list[-1].set_xlabel('Time from go cue (s)')
-
-trials_to_plot = td_subspace_split.groupby('task').sample(n=1).set_index('trial_id')
-fig,axs = plt.subplots(19,len(trials_to_plot),sharex=True,sharey='row',figsize=(10,18))
-fig.tight_layout()
-for colnum,(trial_id,trial) in enumerate(trials_to_plot.iterrows()):
-    plot_trial_split_space(trial,axs[:,colnum])
-# %% Plot average traces
-td_subspace_split_avg = pyaldata.trial_average(td_subspace_split,condition='task',ref_field='lfads_pca')
-fig,axs = plt.subplots(19,len(td_subspace_split_avg),sharex=True,sharey='row',figsize=(10,18))
-fig.tight_layout()
-for colnum,(task,trial) in enumerate(td_subspace_split_avg.iterrows()):
-    plot_trial_split_space(trial,axs[:,colnum])
-
-
-# %%
+# cst_trace_plot = k3d.plot(name='CST neural traces in shared space')
+# rtt_trace_plot = k3d.plot(name='RTT neural traces in shared space')
+trials_plot = k3d.plot(name='CST and RTT trials in CST subspace')
+plot_k3d_trace(cst_trial,trials_plot,color=0x1f77b4)
+plot_k3d_trace(rtt_trial,trials_plot,color=0xff7f0e)
