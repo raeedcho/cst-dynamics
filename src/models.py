@@ -130,12 +130,17 @@ class JointSubspace(BaseEstimator,TransformerMixin):
             the joint subspace.
         orthogonalize - (bool) whether or not to orthogonalize the joint subspace
             using SVD. Default is True.
+        remove_latent_offsets - (bool) whether or not to remove the mean of each
+            dataset before projecting into the joint subspace. If True, the mean of
+            each resultant latent dimension will be 0. If False, the offsets in the
+            original signals (signal means) will be passed through the transformation.
+            Default is True, as in normal PCA.
 
     Returns:
         (numpy array) projection matrix from full-D space to joint subspace
             (n_features x (num_dims*num_conditions))
     '''
-    def __init__(self,n_comps_per_cond=2,orthogonalize=True,signal=None,condition=None):
+    def __init__(self,n_comps_per_cond=2,orthogonalize=True,signal=None,condition=None,remove_latent_offsets=True):
         '''
         Initiates JointSubspace model.
         '''
@@ -146,6 +151,7 @@ class JointSubspace(BaseEstimator,TransformerMixin):
         self.orthogonalize = orthogonalize
         self.signal = signal
         self.condition = condition
+        self.remove_latent_offsets = remove_latent_offsets
 
     def fit(self,X,y=None):
         '''
@@ -164,11 +170,12 @@ class JointSubspace(BaseEstimator,TransformerMixin):
         self.conditions_ = np.unique(X[self.condition])
         self.n_conditions_ = len(self.conditions_)
         self.n_components_ = self.n_comps_per_cond*self.n_conditions_
+        self.full_mean_ = np.mean(np.row_stack(X[self.signal]),axis=0)
         self.cond_means_ = (
             X
             .groupby(self.condition)
             [self.signal]
-            .apply(lambda x: np.mean(np.row_stack(x),axis=0))
+            .apply(lambda x: np.mean(np.row_stack(x)-self.full_mean_,axis=0))
         )
 
         dim_red_models = (
@@ -199,12 +206,23 @@ class JointSubspace(BaseEstimator,TransformerMixin):
         '''
         assert hasattr(self,'P_'), "Model not yet fitted"
 
-        return (
-            X
-            .join(self.cond_means_,on=self.condition,rsuffix='_mean')
-            .assign(**{
-                f'centered_{self.signal}': lambda x: x[self.signal] - x[f'{self.signal}_mean'],
-                f'{self.signal}_joint_pca': lambda df: df.apply(lambda s: np.dot(s[f'centered_{self.signal}'],self.P_),axis=1),
-            })
-            .drop(columns=[f'{self.signal}_mean',f'centered_{self.signal}'])
-        )
+        if self.remove_latent_offsets:
+            return (
+                X
+                .join(self.cond_means_,on=self.condition,rsuffix='_mean')
+                .assign(**{
+                    f'centered_{self.signal}': lambda df: df.apply(lambda s: s[self.signal] - self.full_mean_ - s[f'{self.signal}_mean'],axis=1),
+                    f'{self.signal}_joint_pca': lambda df: df.apply(lambda s: np.dot(s[f'centered_{self.signal}'],self.P_),axis=1),
+                })
+                .drop(columns=[f'{self.signal}_mean',f'centered_{self.signal}'])
+            )
+        else:
+            return (
+                X
+                .assign(**{
+                    f'{self.signal}_joint_pca': lambda df: df.apply(lambda s: np.dot(s[self.signal],self.P_),axis=1),
+                })
+            )
+
+class SubspaceSplitter(BaseEstimator,TransformerMixin):
+    pass

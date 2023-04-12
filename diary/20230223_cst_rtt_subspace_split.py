@@ -45,39 +45,85 @@ td = (
     .pipe(joint_pca_model.fit_transform)
 )
 
-# Data pipeline for decoding analysis
-# - Soft normalize
-# - Remove baseline
+# %% Export data for subspace splitting in MATLAB
+'''
+This code will go through the following steps:
+- Run a separated-rejoined PCA on CST and RTT data:
+    - Run PCA separately on RTT and CST data in this epoch
+    - Concatenate the PC weights from the two tasks
+    - Run SVD on the concatenated PC weights to get new component weights
+    - Project the data onto the new component weights
+- Calculate the covariance matrices for each task
+'''
 
-# trial_data = src.data.crystalize_dataframe(td,sig_guide={
-#     'MC_rates': [f'ch{chan}u{unit}' for chan,unit in td['MC_unit_guide'].values[0]],
-#     'lfads_rates': [f'ch{chan}u{unit}' for chan,unit in td['MC_unit_guide'].values[0]],
-#     'lfads_inputs': None,
-#     'rel_cursor_pos': None,
-#     'rel_hand_pos': None,
-#     'hand_vel': None,
-#     'cursor_vel': None,
-#     'hand_speed': None,
-#     'hand_acc': None,
-#     'Time from go cue (s)': None,
-#     'Time from task cue (s)': None,
-# })
-# trial_info = src.data.extract_metaframe(td,metacols=['trial_id','task','lambda','ct_location','result','rt_locations'])
-# full_td = trial_info.join(trial_data)
+signal = 'lfads_rates_joint_pca'
+remove_task_mean_activity = True
+num_dims = 15
 
-#%% Find joint subspace
-# exp_td = src.data.explode_td(td)
-# signal = 'lfads_rates'
-# num_dims = 15
-# joint_subspace_model = src.models.JointSubspace(n_comps_per_cond=num_dims).fit(np.row_stack(exp_td[signal]),exp_td['task'])
-# td = td.assign(**{
-#     signal.replace('rates','pca'): [joint_subspace_model.transform(s) for s in td[signal]]
-# })
+if remove_task_mean_activity:
+    covar_mats = (
+        td
+        .groupby('task')
+        .apply(lambda df: pd.DataFrame(data=np.cov(np.row_stack(df[signal]),rowvar=False)))
+    )
+else:
+    covar_mats = (
+        td
+        .groupby('task')
+        .apply(lambda df: pd.DataFrame(data=np.row_stack(df[signal]).T @ np.row_stack(df[signal]) / df.shape[0]))
+    )
+
+for task in ['CST','RTT']:
+    covar_mats.loc[task].to_csv(
+        f"../results/subspace_splitting/Prez_20220721_{task}_{signal}_covar_mat.csv",
+        header=False,
+        index=False,
+    )
+
+# %% import subpsace splitter data
+
+matfile = sio.loadmat(
+    f"../results/subspace_splitting/Prez_20220721_CSTRTT_{signal}_subspacesplitter.mat",
+    squeeze_me=True,
+)
+
+Q = {key: matfile['Q'][key].item() for key in matfile['Q'].dtype.names}
+varexp = {key: matfile['varexp'][key].item() for key in matfile['varexp'].dtype.names}
+
+# verify that varexp matches the covariance matrices we calculated
+# np.trace(Q['unique1'].T @ covar_mats.loc['RTT'] @ Q['unique1'])/np.trace(covar_mats.loc['RTT'])
+
+var_thresh = 0.015 # slightly arbitrary, chosen by looking at split variance explained numbers
+cst_unique_proj = Q['unique1'][:,varexp['unique1_C1']>var_thresh]
+rtt_unique_proj = Q['unique2'][:,varexp['unique2_C2']>var_thresh]
+shared_proj = Q['shared']
+null_proj = np.column_stack([
+    Q['unique1'][:,varexp['unique1_C1']<var_thresh],
+    Q['unique2'][:,varexp['unique2_C2']<var_thresh],
+])
+
+# project data through the joint space into the split subspaces
+td = (
+    td
+    .assign(**{
+        f'{signal}_cst_unique': lambda df: df.apply(lambda s: np.dot(s[signal],cst_unique_proj),axis=1),
+        f'{signal}_rtt_unique': lambda df: df.apply(lambda s: np.dot(s[signal],rtt_unique_proj),axis=1),
+        f'{signal}_shared': lambda df: df.apply(lambda s: np.dot(s[signal],shared_proj),axis=1),
+        f'{signal}_null': lambda df: df.apply(lambda s: np.dot(s[signal],null_proj),axis=1),
+    })
+)
 
 #%% Context space
-signal = 'lfads_rates'
-tonic_context_model = LinearDiscriminantAnalysis()
+signal = 'lfads_rates_joint_pca'
 td_models = src.data.rebin_data(td,new_bin_size=0.100)
+
+vel_model = LinearRegression(fit_intercept=False)
+vel_model.fit(
+    np.row_stack(td_models[signal]),
+    np.row_stack(td_models['hand_vel'])[:,0],
+)
+
+tonic_context_model = LinearDiscriminantAnalysis()
 tonic_context_model.fit(
     np.row_stack(td_models.apply(lambda x: x[signal][x['idx_goCueTime']+15,:],axis=1)),
     td_models['task'],
@@ -92,6 +138,7 @@ transient_context_model.fit(
 def norm_vec(vec):
     return vec/np.linalg.norm(vec)
 
+td['Motor Cortex Velocity Dim'] = [(sig @ norm_vec(vel_model.coef_).squeeze()[:,None]).squeeze() for sig in td[signal]]
 td['Motor Cortex Tonic Context Dim'] = [(sig @ norm_vec(tonic_context_model.coef_).squeeze()[:,None]).squeeze() for sig in td[signal]]
 td['Motor Cortex Transient Context Dim'] = [(sig @ norm_vec(transient_context_model.coef_).squeeze()[:,None]).squeeze() for sig in td[signal]]
 
@@ -175,75 +222,6 @@ trial_fig, score_fig = src.decoder_analysis.run_decoder_analysis(td, 'lfads_rate
 
 # %% plot individual traces
 
-# %% Export data for subspace splitting in MATLAB
-'''
-This code will go through the following steps:
-- Run a separated-rejoined PCA on CST and RTT data:
-    - Run PCA separately on RTT and CST data in this epoch
-    - Concatenate the PC weights from the two tasks
-    - Run SVD on the concatenated PC weights to get new component weights
-    - Project the data onto the new component weights
-- Calculate the covariance matrices for each task
-'''
-
-signal = 'lfads_rates_joint_pca'
-remove_task_mean_activity = True
-num_dims = 15
-
-if remove_task_mean_activity:
-    covar_mats = (
-        td
-        .groupby('task')
-        .apply(lambda df: pd.DataFrame(data=np.cov(np.row_stack(df[signal]),rowvar=False)))
-    )
-else:
-    covar_mats = (
-        td
-        .groupby('task')
-        .apply(lambda df: pd.DataFrame(data=np.row_stack(df[signal]).T @ np.row_stack(df[signal]) / df.shape[0]))
-    )
-
-for task in ['CST','RTT']:
-    covar_mats.loc[task].to_csv(
-        f"../results/subspace_splitting/Prez_20220721_{task}_{signal}_covar_mat.csv",
-        header=False,
-        index=False,
-    )
-
-# %% import subpsace splitter data
-
-matfile = sio.loadmat(
-    f"../results/subspace_splitting/Prez_20220721_CSTRTT_{signal}_subspacesplitter.mat",
-    squeeze_me=True,
-)
-
-Q = {key: matfile['Q'][key].item() for key in matfile['Q'].dtype.names}
-varexp = {key: matfile['varexp'][key].item() for key in matfile['varexp'].dtype.names}
-
-# verify that varexp matches the covariance matrices we calculated
-# np.trace(Q['unique1'].T @ covar_mats.loc['RTT'] @ Q['unique1'])/np.trace(covar_mats.loc['RTT'])
-
-var_thresh = 0.016 # slightly arbitrary, chosen by looking at split variance explained numbers
-cst_unique_proj = Q['unique1'][:,varexp['unique1_C1']>var_thresh]
-rtt_unique_proj = Q['unique2'][:,varexp['unique2_C2']>var_thresh]
-shared_proj = Q['shared']
-
-# project data through the joint space into the split subspaces
-td_proj = (
-    td
-    .assign(**{
-        f'{signal}_cst_unique': lambda df: df.apply(lambda s: np.dot(s[signal],cst_unique_proj),axis=1),
-        f'{signal}_rtt_unique': lambda df: df.apply(lambda s: np.dot(s[signal],rtt_unique_proj),axis=1),
-        f'{signal}_shared': lambda df: df.apply(lambda s: np.dot(s[signal],shared_proj),axis=1),
-    })
-)
-
-# %%
-# A couple things to do:
-#   - Check how aligned decoder axis is with each subspace
-#   - Transfer these subspaces back to original data structure to plot hand position and target info
-
-# %% Plot individual traces
 def plot_trial_split_space(trial_to_plot,ax_list):
     src.plot.plot_hand_trace(trial_to_plot,ax=ax_list[0],timesig='Time from go cue (s)')
     src.plot.plot_hand_velocity(trial_to_plot,ax_list[1],timesig='Time from go cue (s)')
@@ -269,16 +247,9 @@ def plot_trial_split_space(trial_to_plot,ax_list):
     ax_list[-1].set_xlabel('Time from go cue (s)')
 
 trials_to_plot = td_proj.groupby('task').sample(n=1).set_index('trial_id')
-fig,axs = plt.subplots(19,len(trials_to_plot),sharex=True,sharey='row',figsize=(10,18))
+fig,axs = plt.subplots(17,len(trials_to_plot),sharex=True,sharey='row',figsize=(10,18))
 fig.tight_layout()
 for colnum,(trial_id,trial) in enumerate(trials_to_plot.iterrows()):
-    plot_trial_split_space(trial,axs[:,colnum])
-
-# %% Plot average traces (they don't really make any sense though...)
-td_subspace_split_avg = pyaldata.trial_average(td_subspace_split,condition='task',ref_field='lfads_pca')
-fig,axs = plt.subplots(19,len(td_subspace_split_avg),sharex=True,sharey='row',figsize=(10,18))
-fig.tight_layout()
-for colnum,(task,trial) in enumerate(td_subspace_split_avg.iterrows()):
     plot_trial_split_space(trial,axs[:,colnum])
 
 #%% k3d plots
@@ -310,27 +281,61 @@ for _,trial in td.query('task=="RTT"').sample(n=10).iterrows():
     )
 rtt_trace_plot.display()
 
-#%% k3d plots with explode-y td
-max_abs_hand_vel = np.percentile(np.abs(td_proj['Hand velocity (cm/s)']),95)
+#%% Make 2D plots of neural traces in shared and unique spaces
+def plot_trial_split_space_2D(trial_to_plot,ax_list,color='k'):
+    sig_list = [f'{signal}_shared',f'{signal}_cst_unique',f'{signal}_rtt_unique']
 
-def plot_k3d_trace(trial,plot,color=None):
-    neural_trace = np.row_stack(trial[f'{signal}_shared'])
-    plot+=k3d.line(
-        neural_trace[:,0:3].astype(np.float32),
-        shader='mesh',
-        width=3e-3,
-        color=color,
-        # attribute=trial['Hand velocity (cm/s)'],
-        # color_map=k3d.paraview_color_maps.Erdc_divHi_purpleGreen,
-        # color_range=[-max_abs_hand_vel,max_abs_hand_vel],
-    )
-    plot.display()
+    for ax,sig in zip(ax_list,sig_list):
+        ax.plot(trial_to_plot[sig][:,0],trial_to_plot[sig][:,1],color=color)
+        ax.set_aspect('equal')
+        ax.set_xticks([])
+        ax.set_yticks([])
+        sns.despine(ax=ax,trim=True)
 
-# plot traces
-cst_trial = td_proj.loc[227]
-rtt_trial = td_proj.loc[228]
-# cst_trace_plot = k3d.plot(name='CST neural traces in shared space')
-# rtt_trace_plot = k3d.plot(name='RTT neural traces in shared space')
-trials_plot = k3d.plot(name='CST and RTT trials in CST subspace')
-plot_k3d_trace(cst_trial,trials_plot,color=0x1f77b4)
-plot_k3d_trace(rtt_trial,trials_plot,color=0xff7f0e)
+
+trials_to_plot = td_proj.groupby('task').sample(n=1).set_index('trial_id')
+fig,axs = plt.subplots(3,1,figsize=(4,10))
+fig.tight_layout()
+for colnum,(trial_id,trial) in enumerate(trials_to_plot.iterrows()):
+    plot_trial_split_space_2D(trial,axs,color='C0' if trial['task']=='CST' else 'C1')
+
+fig_name = src.util.format_outfile_name(td,postfix='cst_rtt_split_space_2D')
+fig.savefig(os.path.join('../results/2023_ncm_poster/',fig_name+'.pdf'))
+# %% Check out what happens if we project MC_rates into this space we found with LFADS
+
+sig_temp = 'MC_rates'
+td_temp = (
+    td_proj
+    .assign(**{
+        f'{sig_temp}_joint_pca': lambda df: df.apply(lambda s: np.dot(s[sig_temp],joint_pca_model.P_),axis=1),
+    })
+    .assign(**{
+        f'{sig_temp}_joint_pca_cst_unique': lambda df: df.apply(lambda s: np.dot(s[f'{sig_temp}_joint_pca'],cst_unique_proj),axis=1),
+        f'{sig_temp}_joint_pca_rtt_unique': lambda df: df.apply(lambda s: np.dot(s[f'{sig_temp}_joint_pca'],rtt_unique_proj),axis=1),
+        f'{sig_temp}_joint_pca_shared': lambda df: df.apply(lambda s: np.dot(s[f'{sig_temp}_joint_pca'],shared_proj),axis=1),
+    })
+)
+
+
+# %%
+def plot_MC_trial_split_space_2D(trial_to_plot,ax_list,color='k'):
+    sig_list = [
+        f'{sig_temp}_joint_pca_shared',
+        f'{sig_temp}_joint_pca_cst_unique',
+        f'{sig_temp}_joint_pca_rtt_unique',
+    ]
+
+    for ax,sig in zip(ax_list,sig_list):
+        ax.plot(trial_to_plot[sig][:,0],trial_to_plot[sig][:,1],color=color)
+        ax.set_aspect('equal')
+        ax.set_xticks([])
+        ax.set_yticks([])
+        sns.despine(ax=ax,trim=True)
+
+
+trials_to_plot = td_temp.groupby('task').sample(n=1).set_index('trial_id')
+fig,axs = plt.subplots(3,1,figsize=(4,10))
+fig.tight_layout()
+for colnum,(trial_id,trial) in enumerate(trials_to_plot.iterrows()):
+    plot_MC_trial_split_space_2D(trial,axs,color='C0' if trial['task']=='CST' else 'C1')
+# %%
