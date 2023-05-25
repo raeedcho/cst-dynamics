@@ -5,5 +5,9 @@ scripts/__pycache__
 reports/
 _freeze/
 results/2022_sfn_poster
+results/2023_ncm_poster
 results/dagmar_talk
+results/subspace_splitting
+results/lfads/Prez_20220721_RTTCST
 env
+.DS_Store
