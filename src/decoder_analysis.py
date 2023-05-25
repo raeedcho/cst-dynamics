@@ -61,11 +61,11 @@ def score_models(df,signal,models):
     
     return scores
     
-def run_decoder_analysis(td,signal):
+def run_decoder_analysis(td,signal,hand_or_cursor='hand',pos_or_vel='vel'):
     td_train_test = (
         td
         .assign(
-            **{'True velocity': lambda df: df.apply(lambda s: s['hand_vel'][:,0],axis=1)}
+            **{'True velocity': lambda df: df.apply(lambda s: s[f'{hand_or_cursor}_{pos_or_vel}'][:,0],axis=1)}
         )
         .filter(items=[
             'trial_id',
@@ -95,7 +95,7 @@ def run_decoder_analysis(td,signal):
             id_vars=['trial_id','Time from go cue (s)','task'],
             value_vars=['True velocity','CST predicted','RTT predicted','Joint predicted'],
             var_name='Model',
-            value_name='Hand velocity (cm/s)',
+            value_name=f'{hand_or_cursor} velocity (cm/s)',
         )
     )
     
@@ -104,7 +104,7 @@ def run_decoder_analysis(td,signal):
     g=sns.relplot(
         data=td_pred.loc[np.isin(td_pred['trial_id'],trials_to_plot)],
         x='Time from go cue (s)',
-        y='Hand velocity (cm/s)',
+        y=f'{hand_or_cursor} velocity (cm/s)',
         hue='Model',
         hue_order=['True velocity','CST predicted','RTT predicted','Joint predicted'],
         palette=['k','C0','C1','0.5'],
