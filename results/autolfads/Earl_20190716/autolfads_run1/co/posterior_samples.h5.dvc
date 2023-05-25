@@ -1,4 +1,0 @@
-outs:
-- md5: 2425afe64787137f055465c014571511
-  size: 100288564
-  path: posterior_samples.h5
