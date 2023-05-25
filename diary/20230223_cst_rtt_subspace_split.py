@@ -218,7 +218,12 @@ sns.despine(fig=fig,trim=True)
 
 # %% decoding
 
-trial_fig, score_fig = src.decoder_analysis.run_decoder_analysis(td, 'lfads_rates_joint_pca')
+trial_fig, score_fig = src.decoder_analysis.run_decoder_analysis(
+    td,
+    'lfads_rates_joint_pca_rtt_unique',
+    hand_or_cursor='hand',
+    pos_or_vel='vel'
+)
 
 # %% plot individual traces
 
@@ -338,4 +343,64 @@ fig,axs = plt.subplots(3,1,figsize=(4,10))
 fig.tight_layout()
 for colnum,(trial_id,trial) in enumerate(trials_to_plot.iterrows()):
     plot_MC_trial_split_space_2D(trial,axs,color='C0' if trial['task']=='CST' else 'C1')
+# %% Some extra scatter plots
+
+td_explode = (
+    td
+    .assign(
+        **{'Hand velocity (cm/s)': lambda x: x.apply(lambda y: y['hand_vel'][:,0],axis=1)}
+    )
+    .filter(items=[
+        'trial_id',
+        'Time from go cue (s)',
+        'task',
+        'Motor Cortex Velocity Dim',
+        'Motor Cortex Transient Context Dim',
+        'Motor Cortex Tonic Context Dim',
+        'Hand velocity (cm/s)'
+    ])
+    .explode([
+        'Time from go cue (s)',
+        'Motor Cortex Velocity Dim',
+        'Motor Cortex Transient Context Dim',
+        'Motor Cortex Tonic Context Dim',
+        'Hand velocity (cm/s)',
+    ])
+    .astype({
+        'Time from go cue (s)': float,
+        'Motor Cortex Velocity Dim': float,
+        'Motor Cortex Transient Context Dim': float,
+        'Motor Cortex Tonic Context Dim': float,
+        'Hand velocity (cm/s)': float,
+    })
+    .loc[lambda df: df['Time from go cue (s)']>0]
+    # .loc[lambda df: (df['Time from go cue (s)']<0) & (df['Time from go cue (s)']>-0.5)]
+)
+
+vel_corr = (
+    td_explode
+    .groupby('task')
+    .apply(lambda df: np.corrcoef(df['Hand velocity (cm/s)'],df['Motor Cortex Velocity Dim'])[0,1])
+)
+context_corr = (
+    td_explode
+    .groupby('task')
+    .apply(lambda df: np.corrcoef(df['Hand velocity (cm/s)'],df['Motor Cortex Tonic Context Dim'])[0,1])
+)
+g = sns.pairplot(
+    data=td_explode.sample(300),
+    x_vars='Hand velocity (cm/s)',
+    y_vars=[
+        'Motor Cortex Velocity Dim',
+        'Motor Cortex Tonic Context Dim'
+    ],
+    hue='task',
+    hue_order=['CST','RTT'],
+    kind='reg',
+    height=4,
+    aspect=1,
+)
+sns.despine(fig=g.fig,trim=True)
+fig_name = src.util.format_outfile_name(td,postfix='neural_dims_v_vel')
+
 # %%
