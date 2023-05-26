@@ -1,0 +1,14 @@
+
+# Read about DVC pipeline configuration (https://dvc.org/doc/user-guide/project-structure/dvcyaml-files#stages)
+# to customize your stages even more
+stages:
+  prep:
+    cmd: python scripts/prep_data.py
+    params:
+      - preload
+      - chop_merge
+    deps:
+      - scripts/prep_data.py
+      - data/trial_data/Prez_20220721_RTTCST_TD.mat
+    outs:
+      - data/pre-lfads/Prez_20220721_RTTCST_tensors.hdf5

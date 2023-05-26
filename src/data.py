@@ -9,11 +9,10 @@ from . import lfads_helpers
 def load_clean_data(
     file_prefix,
     verbose=False,
-    keep_unsorted=False,
     bin_size=0.010,
-    firing_rates_func= lambda td: pyaldata.add_firing_rates(td,method='smooth',std=0.05,backend='convolve'),
     epoch_fun = lambda trial: slice(0,trial['hand_pos'].shape[0]),
-    lfads_params = None,
+    preload_params = None,
+    chop_merge_params = None,
     ):
     """
     Loads and cleans COCST trial data, given a file query
@@ -30,9 +29,74 @@ def load_clean_data(
     elif len(filenames) > 1:
         raise ValueError(f"Multiple files found matching {file_prefix}")
 
+    assert preload_params is not None, "preload_params must be specified"
+
+    td = preload_data(filename=filenames[0],**preload_params)
+
+    if chop_merge_params is not None:
+        trial_ids = lfads_tf2.utils.load_data(
+            Path("../data/pre-lfads/"),
+            prefix=file_prefix,
+            signal="trial_id",
+            merge_tv=True
+        )[0].astype(int)
+
+        posterior_paths = list(Path("../results/lfads").glob(f"{file_prefix}*"))
+        if len(posterior_paths) == 0:
+            raise FileNotFoundError(f"No LFADS posterior found for {file_prefix}")
+        elif len(posterior_paths) > 1:
+            raise ValueError(f"Multiple LFADS posteriors found for {file_prefix}")
+        post_data = lfads_tf2.utils.load_posterior_averages(
+            posterior_paths[0],
+            merge_tv=True
+        )
+
+        td = (
+            td
+            .pipe(
+                lfads_helpers.add_lfads_rates,
+                post_data.rates/preload_params['bin_size'],
+                chopped_trial_ids=trial_ids,
+                overlap=chop_merge_params['overlap'],
+                new_sig_name='lfads_rates',
+            )
+            .pipe(
+                lfads_helpers.add_lfads_rates,
+                post_data.gen_inputs/preload_params['bin_size'],
+                chopped_trial_ids=trial_ids,
+                overlap=chop_merge_params['overlap'],
+                new_sig_name='lfads_inputs',
+            )
+        )
+
+    td = (
+        td
+        # do sequential trimming to maximally avoid edge effects from kinematic signals
+        .pipe(trim_nans, ref_signals=['rel_hand_pos'])
+        .pipe(fill_kinematic_signals)
+        .pipe(trim_nans,ref_signals=['lfads_rates'])
+        .pipe(
+            pyaldata.restrict_to_interval,
+            epoch_fun = epoch_fun,
+            warn_per_trial=True,
+        )
+        .pipe(rebin_data,new_bin_size=bin_size)
+        .pipe(add_trial_time,ref_event='idx_goCueTime',column_name='Time from go cue (s)')
+        .pipe(add_trial_time,ref_event='idx_pretaskHoldTime',column_name='Time from task cue (s)')
+    )
+
+    return td
+
+def preload_data(
+    filename,
+    verbose=False,
+    keep_unsorted=False,
+    bin_size=0.01,
+    firing_rates_func= lambda td: pyaldata.add_firing_rates(td,method='smooth',std=0.05,backend='convolve'),
+):
     td = (
         pyaldata.mat2dataframe(
-            filenames[0],
+            filename,
             shift_idx_fields=True,
             td_name='trial_data'
         )
@@ -60,62 +124,9 @@ def load_clean_data(
             divide_by_bin_size=True,
             verbose=verbose
         )
+        .pipe(rebin_data,new_bin_size=bin_size)
         .pipe(firing_rates_func)
     )
-
-    if lfads_params is not None:
-        trial_ids = lfads_tf2.utils.load_data(
-            Path("../data/pre-lfads/"),
-            prefix=file_prefix,
-            signal="trial_id",
-            merge_tv=True
-        )[0].astype(int)
-
-        posterior_paths = list(Path("../results/lfads").glob(f"{file_prefix}*"))
-        if len(posterior_paths) == 0:
-            raise FileNotFoundError(f"No LFADS posterior found for {file_prefix}")
-        elif len(posterior_paths) > 1:
-            raise ValueError(f"Multiple LFADS posteriors found for {file_prefix}")
-        post_data = lfads_tf2.utils.load_posterior_averages(
-            posterior_paths[0],
-            merge_tv=True
-        )
-
-        td = (
-            td
-            .pipe(rebin_data,new_bin_size=lfads_params['bin_size'])
-            .pipe(
-                lfads_helpers.add_lfads_rates,
-                post_data.rates/lfads_params['bin_size'],
-                chopped_trial_ids=trial_ids,
-                overlap=lfads_params['overlap'],
-                new_sig_name='lfads_rates',
-            )
-            .pipe(
-                lfads_helpers.add_lfads_rates,
-                post_data.gen_inputs/lfads_params['bin_size'],
-                chopped_trial_ids=trial_ids,
-                overlap=lfads_params['overlap'],
-                new_sig_name='lfads_inputs',
-            )
-        )
-
-    td = (
-        td
-        # do sequential trimming to maximally avoid edge effects from kinematic signals
-        .pipe(trim_nans, ref_signals=['rel_hand_pos'])
-        .pipe(fill_kinematic_signals)
-        .pipe(trim_nans,ref_signals=['lfads_rates'])
-        .pipe(
-            pyaldata.restrict_to_interval,
-            epoch_fun = epoch_fun,
-            warn_per_trial=True,
-        )
-        .pipe(rebin_data,new_bin_size=bin_size)
-        .pipe(add_trial_time,ref_event='idx_goCueTime',column_name='Time from go cue (s)')
-        .pipe(add_trial_time,ref_event='idx_pretaskHoldTime',column_name='Time from task cue (s)')
-    )
-
     return td
 
 @pyaldata.copy_td

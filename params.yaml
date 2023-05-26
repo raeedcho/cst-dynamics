@@ -1,9 +1,10 @@
-lfads_prep:
-  window_len: 60
-  overlap: 20
+preload:
   bin_size: 0.010
   keep_unsorted: False
   verbose: True
+chop_merge:
+  window_len: 60
+  overlap: 20
 dynamics_analysis:
   num_dims: 10
   bin_size: 0.030
