@@ -220,7 +220,7 @@ sns.despine(fig=fig,trim=True)
 
 trial_fig, score_fig = src.decoder_analysis.run_decoder_analysis(
     td,
-    'lfads_rates_joint_pca_rtt_unique',
+    'lfads_rates_joint_pca_shared',
     hand_or_cursor='hand',
     pos_or_vel='vel'
 )
@@ -251,7 +251,7 @@ def plot_trial_split_space(trial_to_plot,ax_list):
 
     ax_list[-1].set_xlabel('Time from go cue (s)')
 
-trials_to_plot = td_proj.groupby('task').sample(n=1).set_index('trial_id')
+trials_to_plot = td.groupby('task').sample(n=1).set_index('trial_id')
 fig,axs = plt.subplots(17,len(trials_to_plot),sharex=True,sharey='row',figsize=(10,18))
 fig.tight_layout()
 for colnum,(trial_id,trial) in enumerate(trials_to_plot.iterrows()):
@@ -298,7 +298,7 @@ def plot_trial_split_space_2D(trial_to_plot,ax_list,color='k'):
         sns.despine(ax=ax,trim=True)
 
 
-trials_to_plot = td_proj.groupby('task').sample(n=1).set_index('trial_id')
+trials_to_plot = td.groupby('task').sample(n=1).set_index('trial_id')
 fig,axs = plt.subplots(3,1,figsize=(4,10))
 fig.tight_layout()
 for colnum,(trial_id,trial) in enumerate(trials_to_plot.iterrows()):
@@ -310,7 +310,7 @@ fig.savefig(os.path.join('../results/2023_ncm_poster/',fig_name+'.pdf'))
 
 sig_temp = 'MC_rates'
 td_temp = (
-    td_proj
+    td
     .assign(**{
         f'{sig_temp}_joint_pca': lambda df: df.apply(lambda s: np.dot(s[sig_temp],joint_pca_model.P_),axis=1),
     })
