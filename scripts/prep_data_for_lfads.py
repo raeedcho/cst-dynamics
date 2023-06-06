@@ -6,8 +6,6 @@ This module preps a neural tensor from trial data for LFADS training.
 import src.data
 import src.lfads_helpers
 import yaml
-import pyaldata
-import pandas as pd
 
 with open("params.yaml", "r") as params_file:
     params = yaml.safe_load(params_file)
