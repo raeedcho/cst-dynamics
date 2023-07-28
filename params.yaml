@@ -1,8 +1,8 @@
 preload:
-  bin_size: 0.010
   keep_unsorted: False
   verbose: True
 chop_merge:
+  bin_size: 0.010
   window_len: 60
   overlap: 20
 dynamics_analysis:
