@@ -1,0 +1,57 @@
+---
+title: Trying out pymanopt for optimization on Riemannian manifold
+date: 2023-06-07
+format:
+  html:
+    toc: true
+    toc-location: left
+    cap-location: margin
+    code-fold: true
+    execute: true
+    self-contained: false
+    freeze: true
+jupyter: python3
+---
+
+```{python}
+import autograd.numpy as anp
+import torch
+import pymanopt
+import pymanopt.manifolds
+import pymanopt.optimizers
+
+anp.random.seed(42)
+
+dim = 300
+manifold = pymanopt.manifolds.Sphere(dim)
+
+matrix = anp.random.normal(size=(dim, dim))
+matrix = 0.5 * (matrix + matrix.T)
+
+# torch_mat = torch.from_numpy(matrix).to(device='mps',dtype=torch.float32)
+torch_mat = torch.from_numpy(matrix)
+
+@pymanopt.function.autograd(manifold)
+def autograd_cost(point):
+    return -point.T @ matrix @ point
+
+@pymanopt.function.pytorch(manifold)
+def torch_cost(point):
+    return -point.t() @ matrix @ point
+
+autograd_problem = pymanopt.Problem(manifold, autograd_cost)
+torch_problem = pymanopt.Problem(manifold, torch_cost)
+
+optimizer = pymanopt.optimizers.SteepestDescent()
+result = optimizer.run(torch_problem)
+
+eigenvalues, eigenvectors = anp.linalg.eig(matrix)
+dominant_eigenvector = eigenvectors[:, eigenvalues.argmax()]
+
+# print("Dominant eigenvector:", dominant_eigenvector)
+# print("Pymanopt solution:", result.point)
+```
+
+```{python}
+
+```
