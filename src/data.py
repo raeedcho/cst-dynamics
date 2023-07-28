@@ -8,8 +8,6 @@ from . import lfads_helpers
 
 def load_clean_data(
     file_prefix,
-    verbose=False,
-    bin_size=0.010,
     epoch_fun = lambda trial: slice(0,trial['hand_pos'].shape[0]),
     preload_params = None,
     chop_merge_params = None,
@@ -22,52 +20,12 @@ def load_clean_data(
     TODO: set up an initial script to move data into the 'data' folder of the project (maybe with DVC)
     """
     
-    datapath = Path('../data/trial_data/')
-    filenames = list(datapath.glob(f'{file_prefix}*.mat'))
-    if len(filenames) == 0:
-        raise FileNotFoundError(f"No files found matching {file_prefix}")
-    elif len(filenames) > 1:
-        raise ValueError(f"Multiple files found matching {file_prefix}")
-
     assert preload_params is not None, "preload_params must be specified"
 
-    td = preload_data(filename=filenames[0],**preload_params)
+    td = preload_data(file_prefix=file_prefix,**preload_params)
 
     if chop_merge_params is not None:
-        trial_ids = lfads_tf2.utils.load_data(
-            Path("../data/pre-lfads/"),
-            prefix=file_prefix,
-            signal="trial_id",
-            merge_tv=True
-        )[0].astype(int)
-
-        posterior_paths = list(Path("../results/lfads").glob(f"{file_prefix}*"))
-        if len(posterior_paths) == 0:
-            raise FileNotFoundError(f"No LFADS posterior found for {file_prefix}")
-        elif len(posterior_paths) > 1:
-            raise ValueError(f"Multiple LFADS posteriors found for {file_prefix}")
-        post_data = lfads_tf2.utils.load_posterior_averages(
-            posterior_paths[0],
-            merge_tv=True
-        )
-
-        td = (
-            td
-            .pipe(
-                lfads_helpers.add_lfads_rates,
-                post_data.rates/preload_params['bin_size'],
-                chopped_trial_ids=trial_ids,
-                overlap=chop_merge_params['overlap'],
-                new_sig_name='lfads_rates',
-            )
-            .pipe(
-                lfads_helpers.add_lfads_rates,
-                post_data.gen_inputs/preload_params['bin_size'],
-                chopped_trial_ids=trial_ids,
-                overlap=chop_merge_params['overlap'],
-                new_sig_name='lfads_inputs',
-            )
-        )
+        td = lfads_helpers.add_lfads_data_to_td(td,file_prefix=file_prefix,**chop_merge_params)
 
     td = (
         td
@@ -80,7 +38,6 @@ def load_clean_data(
             epoch_fun = epoch_fun,
             warn_per_trial=True,
         )
-        .pipe(rebin_data,new_bin_size=bin_size)
         .pipe(add_trial_time,ref_event='idx_goCueTime',column_name='Time from go cue (s)')
         .pipe(add_trial_time,ref_event='idx_pretaskHoldTime',column_name='Time from task cue (s)')
     )
@@ -88,15 +45,22 @@ def load_clean_data(
     return td
 
 def preload_data(
-    filename,
+    file_prefix,
     verbose=False,
     keep_unsorted=False,
     bin_size=0.01,
     firing_rates_func= lambda td: pyaldata.add_firing_rates(td,method='smooth',std=0.05,backend='convolve'),
 ):
+    datapath = Path('../data/trial_data/')
+    filenames = list(datapath.glob(f'{file_prefix}*.mat'))
+    if len(filenames) == 0:
+        raise FileNotFoundError(f"No files found matching {file_prefix}")
+    elif len(filenames) > 1:
+        raise ValueError(f"Multiple files found matching {file_prefix}")
+
     td = (
         pyaldata.mat2dataframe(
-            filename,
+            filenames[0],
             shift_idx_fields=True,
             td_name='trial_data'
         )
@@ -550,7 +514,7 @@ def remove_artifact_trials(trial_data, rate_thresh=350,verbose=False):
 
     if verbose:
         print(f'{len(bad_trials)} trials with high firing rates removed. Dropping trials with IDs:')
-        print(td_temp.loc[bad_trials,"trial_id"].values)
+        print(td_temp.loc[list(bad_trials),"trial_id"].values)
 
     return trial_data.drop(index=bad_trials)
     

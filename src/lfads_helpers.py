@@ -2,6 +2,7 @@ import numpy as np
 import pyaldata
 import h5py
 import os
+from pathlib import Path
 from sklearn.model_selection import train_test_split
 from sklearn.decomposition import PCA
 
@@ -28,17 +29,7 @@ def prep_neural_tensors(
             Shape of each tensor will be (num_windows, window_len, num_units)
         - (np.ndarray): array of trial ids for each tensor
     """
-    # bin data if necessary
-    if np.isclose(bin_size, trial_data["bin_size"].values[0]):
-        td = trial_data
-    elif bin_size > 1.9 * trial_data["bin_size"].values[0]:
-        td = pyaldata.combine_time_bins(
-            trial_data, int(bin_size / trial_data["bin_size"].values[0])
-        )
-    else:
-        raise ValueError("bin_size must be greater than trial_data.bin_size")
-
-    # compose tensors
+    td = data.rebin_data(trial_data, new_bin_size=bin_size)
     tensor_list = [chop_data(sig, overlap, window_len) for sig in td[signal]]
     trial_ids = np.array(td["trial_id"])
 
@@ -146,42 +137,44 @@ def add_lfads_rates(
     return trial_data
 
 @pyaldata.copy_td
-def prep_data_with_lfads(td, task, lfads_params):
+def add_lfads_data_to_td(td, file_prefix=None, bin_size=0.002, window_len=350, overlap=0):
+
+    assert file_prefix is not None, "Must specify file_prefix"
 
     trial_ids = load_data(
-        '../data/pre-lfads/', 
-        prefix=f'Earl_20190716_{task}', 
-        signal='trial_id',
+        Path("../data/pre-lfads/"),
+        prefix=file_prefix,
+        signal="trial_id",
         merge_tv=True
     )[0].astype(int)
 
+    posterior_paths = list(Path("../results/lfads").glob(f"{file_prefix}*"))
+    if len(posterior_paths) == 0:
+        raise FileNotFoundError(f"No LFADS posterior found for {file_prefix}")
+    elif len(posterior_paths) > 1:
+        raise ValueError(f"Multiple LFADS posteriors found for {file_prefix}")
     post_data = load_posterior_averages(
-        f'../results/autolfads/Earl_20190716/autolfads_with_jitter/{task.lower()}',
+        posterior_paths[0],
         merge_tv=True
     )
 
-    td_task = (
-        td.groupby('task').get_group(task).copy()
-        # bin to the same size as the lfads data
-        .pipe(data.rebin_data,new_bin_size=lfads_params['bin_size'])
+    td = (
+        td
+        .pipe(data.rebin_data,new_bin_size=bin_size)
         .pipe(
             add_lfads_rates,
-            post_data.rates/lfads_params['bin_size'],
+            post_data.rates/bin_size,
             chopped_trial_ids=trial_ids,
-            overlap=lfads_params['overlap'],
+            overlap=overlap,
             new_sig_name='lfads_rates',
         )
         .pipe(
             add_lfads_rates,
-            post_data.gen_inputs/lfads_params['bin_size'],
+            post_data.gen_inputs/bin_size,
             chopped_trial_ids=trial_ids,
-            overlap=lfads_params['overlap'],
+            overlap=overlap,
             new_sig_name='lfads_inputs',
         )
-        # do sequential trimming to maximally avoid edge effects from kinematic signals
-        .pipe(data.trim_nans, ref_signals=['rel_hand_pos'])
-        .pipe(data.fill_kinematic_signals)
-        .pipe(data.trim_nans, ref_signals=['lfads_rates'])
     )
 
-    return td_task
+    return td
