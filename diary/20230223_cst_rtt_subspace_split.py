@@ -18,18 +18,16 @@ import k3d
 import scipy.io as sio
 
 with open("../params.yaml", "r") as params_file:
-    lfads_params = yaml.safe_load(params_file)["lfads_prep"]
+    params = yaml.safe_load(params_file)
 
 load_params = {
     'file_prefix': 'Prez_20220721',
-    'verbose': False,
-    'keep_unsorted': False,
-    'lfads_params': lfads_params,
+    'preload_params': params['preload'],
+    'chop_merge_params': params['chop_merge'],
     'epoch_fun': src.util.generate_realtime_epoch_fun(
         start_point_name='idx_ctHoldTime',
         end_point_name='idx_endTime',
     ),
-    'bin_size': 0.01,
 }
 joint_pca_model = src.models.JointSubspace(n_comps_per_cond=15,signal='lfads_rates',condition='task',remove_latent_offsets=False)
 td = (
@@ -38,10 +36,6 @@ td = (
     .assign(**{'trialtime': lambda x: x['Time from go cue (s)']})
     .pipe(pyaldata.soft_normalize_signal,signals=['lfads_rates','MC_rates'])
     .pipe(src.data.remove_baseline_rates,signals=['MC_rates','lfads_rates'])
-    .pipe(pyaldata.dim_reduce,model=TruncatedSVD(n_components=15),signal='MC_rates',out_fieldname='MC_svd')
-    .pipe(pyaldata.dim_reduce,model=TruncatedSVD(n_components=15),signal='lfads_rates',out_fieldname='lfads_svd')
-    .pipe(pyaldata.dim_reduce,model=PCA(n_components=15),signal='MC_rates',out_fieldname='MC_pca')
-    .pipe(pyaldata.dim_reduce,model=PCA(n_components=15),signal='lfads_rates',out_fieldname='lfads_pca')
     .pipe(joint_pca_model.fit_transform)
 )
 
@@ -220,7 +214,7 @@ sns.despine(fig=fig,trim=True)
 
 trial_fig, score_fig = src.decoder_analysis.run_decoder_analysis(
     td,
-    'lfads_rates_joint_pca_shared',
+    'lfads_rates_joint_pca',
     hand_or_cursor='hand',
     pos_or_vel='vel'
 )
@@ -305,7 +299,7 @@ for colnum,(trial_id,trial) in enumerate(trials_to_plot.iterrows()):
     plot_trial_split_space_2D(trial,axs,color='C0' if trial['task']=='CST' else 'C1')
 
 fig_name = src.util.format_outfile_name(td,postfix='cst_rtt_split_space_2D')
-fig.savefig(os.path.join('../results/2023_ncm_poster/',fig_name+'.pdf'))
+# fig.savefig(os.path.join('../results/2023_ncm_poster/',fig_name+'.pdf'))
 # %% Check out what happens if we project MC_rates into this space we found with LFADS
 
 sig_temp = 'MC_rates'
