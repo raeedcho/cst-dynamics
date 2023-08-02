@@ -3,27 +3,6 @@ from src.dekodec import *
 import numpy as np
 import pymanopt
 
-def test_fit_dekodec():
-    pass
-    # # Test that fit_dekodec returns a dictionary with the expected keys
-    # X_conds = {
-    #     'cond1': np.random.rand(10, 5),
-    #     'cond2': np.random.rand(10, 5)
-    # }
-    # subspaces = fit_dekodec(X_conds)
-    # assert isinstance(subspaces, dict)
-    # assert 'unique' in subspaces
-    # assert 'shared' in subspaces
-
-    # # Test that fit_dekodec raises an error if given only one condition
-    # X_conds = {'cond1': np.random.rand(10, 5)}
-    # try:
-    #     subspaces = fit_dekodec(X_conds)
-    # except AssertionError:
-    #     pass
-    # else:
-    #     raise AssertionError('fit_dekodec did not raise an error for one condition')
-
 def test_get_potent_null():
     num_samples = 100
     num_features = 5
@@ -34,6 +13,13 @@ def test_get_potent_null():
     X = rand_point.u @ np.diag(rand_point.s) @ rand_point.vt
 
     potent_projmat,null_projmat = get_potent_null(X)
+
+    assert potent_projmat.shape == (num_features,num_true_dims)
+    assert null_projmat.shape == (num_features,num_features-num_true_dims)
+
+    assert np.allclose(potent_projmat.T @ potent_projmat, np.eye(num_true_dims))
+    assert np.allclose(null_projmat.T @ null_projmat, np.eye(num_features-num_true_dims))
+    assert np.allclose(potent_projmat.T @ null_projmat, np.zeros((num_true_dims,num_features-num_true_dims)))
 
 def test_get_dimensionality():
     # test that get_dimensionality returns the expected number of dimensions in noiseless data
