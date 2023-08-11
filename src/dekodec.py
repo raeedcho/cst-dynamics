@@ -5,7 +5,7 @@ import pymanopt
 import pymanopt.manifolds
 import pymanopt.optimizers
 
-def fit_dekodec(X_conds, var_cutoff=0.99, do_plot=True, combinations=None):
+def fit_dekodec(X_conds, var_cutoff=0.99, combinations=None):
     """
     Splits data into orthogonal subspaces containing condition-unique and 
     condition-shared activity.
@@ -46,7 +46,7 @@ def fit_dekodec(X_conds, var_cutoff=0.99, do_plot=True, combinations=None):
     }
     subspaces = orthogonalize_unique_spaces(X_conds,cond_unique_projmats)
     subspaces['shared'] = max_var_rotate(
-        null_space(np.column_stack(tuple(subspaces.values()))),
+        null_space(np.column_stack(tuple(subspaces.values())).T),
         np.row_stack(tuple(X_conds.values())),
     )
 
@@ -116,10 +116,10 @@ def orthogonalize_unique_spaces(X_conds,cond_unique_projmats):
         raise ValueError('No unique dimensions found')
 
     Z = torch.from_numpy(np.row_stack(tuple(X_conds.values())))
-    Z_uniques = torch.from_numpy(np.column_stack([
+    Z_uniques = torch.column_stack([
         Z @ torch.from_numpy(projmat)
         for projmat in cond_unique_projmats.values()
-    ]))
+    ])
 
     manifold = pymanopt.manifolds.Stiefel(Z.shape[1],total_unique_dims)
 
@@ -134,7 +134,7 @@ def orthogonalize_unique_spaces(X_conds,cond_unique_projmats):
     Q_all_uniques = flip_positive(result.point)
 
     Q_unique = {
-        cond: arr for cond,arr in zip(
+        f'{cond.lower()}_unique': arr for cond,arr in zip(
             X_conds.keys(),
             np.split(Q_all_uniques,np.cumsum(num_unique_dims),axis=1)[:-1]
         )
