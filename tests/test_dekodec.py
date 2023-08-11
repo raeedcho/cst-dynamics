@@ -3,6 +3,46 @@ from src.dekodec import *
 import numpy as np
 import pymanopt
 
+def test_fit_dekodec():
+    # test that subspaces returned by fit_dekodec have the expected shapes
+    # test that subspaces are orthonormal and full rank together
+    pass 
+
+def test_get_cond_unique_basis():
+    num_samples = 100
+    num_features = 8
+    num_shared_dims = 3
+    num_unique_dims = 2
+
+    Z_unique0 = np.row_stack([
+        np.random.randn(num_samples,num_unique_dims),
+        np.zeros((num_samples,num_unique_dims)),
+    ])
+    Z_unique1 = np.row_stack([
+        np.zeros((num_samples,num_unique_dims)),
+        np.random.randn(num_samples,num_unique_dims),
+    ])
+    Z_shared = np.random.randn(2*num_samples,num_shared_dims)
+    Z = np.column_stack([Z_unique0,Z_unique1,Z_shared])
+    
+    manifold = pymanopt.manifolds.Stiefel(num_features,num_shared_dims+2*num_unique_dims)
+    rand_projmat = manifold.random_point()
+    X_conds = {
+        f'{condnum}': X
+        for condnum,X in enumerate(np.split(Z @ rand_projmat.T,[num_samples]))
+    }
+
+    inferred_projmat = get_cond_unique_basis(X_conds,'0')
+
+    assert inferred_projmat.shape == (num_features,num_unique_dims)
+    assert np.allclose(inferred_projmat.T @ inferred_projmat, np.eye(num_unique_dims))
+    assert np.allclose(X_conds['1'] @ inferred_projmat, 0)
+    assert not np.allclose(X_conds['0'] @ inferred_projmat, 0)
+
+    _,inferred_sing_vals,_ = np.linalg.svd(X_conds['0'] @ inferred_projmat,full_matrices=False)
+    _,true_sing_vals,_ = np.linalg.svd(Z_unique0,full_matrices=False)
+    assert np.allclose(inferred_sing_vals,true_sing_vals)
+
 def test_get_potent_null():
     num_samples = 100
     num_features = 5
@@ -20,6 +60,14 @@ def test_get_potent_null():
     assert np.allclose(potent_projmat.T @ potent_projmat, np.eye(num_true_dims))
     assert np.allclose(null_projmat.T @ null_projmat, np.eye(num_features-num_true_dims))
     assert np.allclose(potent_projmat.T @ null_projmat, np.zeros((num_true_dims,num_features-num_true_dims)))
+
+    potent_var = np.sum(np.var(X @ potent_projmat, axis=0))
+    null_var = np.sum(np.var(X @ null_projmat, axis=0))
+    total_var = np.sum(np.var(X, axis=0))
+    assert np.allclose(potent_var + null_var, total_var)
+    assert potent_var > null_var
+    assert null_var <= 0.01*total_var
+    assert potent_var >= 0.99*total_var
 
 def test_get_dimensionality():
     # test that get_dimensionality returns the expected number of dimensions in noiseless data
