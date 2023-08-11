@@ -10,3 +10,4 @@ from . import subspace_tools
 from . import submovements
 from . import single_neuron_analysis
 from . import decoder_analysis
+from . import dekodec
