@@ -39,73 +39,9 @@ td = (
     .pipe(joint_pca_model.fit_transform)
 )
 
-# %% Export data for subspace splitting in MATLAB
-'''
-This code will go through the following steps:
-- Run a separated-rejoined PCA on CST and RTT data:
-    - Run PCA separately on RTT and CST data in this epoch
-    - Concatenate the PC weights from the two tasks
-    - Run SVD on the concatenated PC weights to get new component weights
-    - Project the data onto the new component weights
-- Calculate the covariance matrices for each task
-'''
-
-signal = 'lfads_rates_joint_pca'
-remove_task_mean_activity = True
-num_dims = 15
-
-if remove_task_mean_activity:
-    covar_mats = (
-        td
-        .groupby('task')
-        .apply(lambda df: pd.DataFrame(data=np.cov(np.row_stack(df[signal]),rowvar=False)))
-    )
-else:
-    covar_mats = (
-        td
-        .groupby('task')
-        .apply(lambda df: pd.DataFrame(data=np.row_stack(df[signal]).T @ np.row_stack(df[signal]) / df.shape[0]))
-    )
-
-for task in ['CST','RTT']:
-    covar_mats.loc[task].to_csv(
-        f"../results/subspace_splitting/Prez_20220721_{task}_{signal}_covar_mat.csv",
-        header=False,
-        index=False,
-    )
-
-# %% import subpsace splitter data
-
-matfile = sio.loadmat(
-    f"../results/subspace_splitting/Prez_20220721_CSTRTT_{signal}_subspacesplitter.mat",
-    squeeze_me=True,
-)
-
-Q = {key: matfile['Q'][key].item() for key in matfile['Q'].dtype.names}
-varexp = {key: matfile['varexp'][key].item() for key in matfile['varexp'].dtype.names}
-
-# verify that varexp matches the covariance matrices we calculated
-# np.trace(Q['unique1'].T @ covar_mats.loc['RTT'] @ Q['unique1'])/np.trace(covar_mats.loc['RTT'])
-
-var_thresh = 0.015 # slightly arbitrary, chosen by looking at split variance explained numbers
-cst_unique_proj = Q['unique1'][:,varexp['unique1_C1']>var_thresh]
-rtt_unique_proj = Q['unique2'][:,varexp['unique2_C2']>var_thresh]
-shared_proj = Q['shared']
-null_proj = np.column_stack([
-    Q['unique1'][:,varexp['unique1_C1']<var_thresh],
-    Q['unique2'][:,varexp['unique2_C2']<var_thresh],
-])
-
-# project data through the joint space into the split subspaces
-td = (
-    td
-    .assign(**{
-        f'{signal}_cst_unique': lambda df: df.apply(lambda s: np.dot(s[signal],cst_unique_proj),axis=1),
-        f'{signal}_rtt_unique': lambda df: df.apply(lambda s: np.dot(s[signal],rtt_unique_proj),axis=1),
-        f'{signal}_shared': lambda df: df.apply(lambda s: np.dot(s[signal],shared_proj),axis=1),
-        f'{signal}_null': lambda df: df.apply(lambda s: np.dot(s[signal],null_proj),axis=1),
-    })
-)
+# %% add dekodec model
+dekodec_model = src.models.DekODec(var_cutoff=0.99,signal='lfads_rates_joint_pca',condition='task')
+td = dekodec_model.fit_transform(td)
 
 #%% Context space
 signal = 'lfads_rates_joint_pca'
@@ -214,7 +150,7 @@ sns.despine(fig=fig,trim=True)
 
 trial_fig, score_fig = src.decoder_analysis.run_decoder_analysis(
     td,
-    'lfads_rates_joint_pca',
+    'lfads_rates_joint_pca_rtt_unique',
     hand_or_cursor='hand',
     pos_or_vel='vel'
 )
@@ -246,7 +182,7 @@ def plot_trial_split_space(trial_to_plot,ax_list):
     ax_list[-1].set_xlabel('Time from go cue (s)')
 
 trials_to_plot = td.groupby('task').sample(n=1).set_index('trial_id')
-fig,axs = plt.subplots(17,len(trials_to_plot),sharex=True,sharey='row',figsize=(10,18))
+fig,axs = plt.subplots(30,len(trials_to_plot),sharex=True,sharey='row',figsize=(10,18))
 fig.tight_layout()
 for colnum,(trial_id,trial) in enumerate(trials_to_plot.iterrows()):
     plot_trial_split_space(trial,axs[:,colnum])
@@ -256,7 +192,7 @@ cst_trace_plot = k3d.plot(name='CST smoothed neural traces')
 max_abs_hand_vel = np.percentile(np.abs(np.row_stack(td['hand_vel'])[:,0]),95)
 # plot traces
 for _,trial in td.query('task=="CST"').sample(n=10).iterrows():
-    neural_trace = trial['lfads_pca']
+    neural_trace = trial['lfads_rates_joint_pca']
     cst_trace_plot+=k3d.line(
         neural_trace[:,0:3].astype(np.float32),
         shader='mesh',
@@ -269,7 +205,7 @@ cst_trace_plot.display()
 
 rtt_trace_plot = k3d.plot(name='RTT smoothed neural traces')
 for _,trial in td.query('task=="RTT"').sample(n=10).iterrows():
-    neural_trace = trial['lfads_pca']
+    neural_trace = trial['lfads_rates_joint_pca']
     rtt_trace_plot+=k3d.line(
         neural_trace[:,0:3].astype(np.float32),
         shader='mesh',
@@ -283,6 +219,7 @@ rtt_trace_plot.display()
 #%% Make 2D plots of neural traces in shared and unique spaces
 def plot_trial_split_space_2D(trial_to_plot,ax_list,color='k'):
     sig_list = [f'{signal}_shared',f'{signal}_cst_unique',f'{signal}_rtt_unique']
+    # sig_list = [f'{signal}_shared',f'{signal}_CST',f'{signal}_RTT']
 
     for ax,sig in zip(ax_list,sig_list):
         ax.plot(trial_to_plot[sig][:,0],trial_to_plot[sig][:,1],color=color)
