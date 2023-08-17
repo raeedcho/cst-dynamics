@@ -6,7 +6,43 @@ import pymanopt
 def test_fit_dekodec():
     # test that subspaces returned by fit_dekodec have the expected shapes
     # test that subspaces are orthonormal and full rank together
-    pass 
+    num_samples = 100
+    num_features = 8
+    num_shared_dims = 3
+    num_unique_dims = 2
+
+    Z_unique0 = np.row_stack([
+        np.random.randn(num_samples,num_unique_dims),
+        np.zeros((num_samples,num_unique_dims)),
+    ])
+    Z_unique1 = np.row_stack([
+        np.zeros((num_samples,num_unique_dims)),
+        np.random.randn(num_samples,num_unique_dims),
+    ])
+    Z_shared = np.random.randn(2*num_samples,num_shared_dims)
+    Z = np.column_stack([Z_unique0,Z_unique1,Z_shared])
+    
+    manifold = pymanopt.manifolds.Stiefel(num_features,num_shared_dims+2*num_unique_dims)
+    rand_projmat = manifold.random_point()
+    X_conds = {
+        f'{condnum}': X
+        for condnum,X in enumerate(np.split(Z @ rand_projmat.T,[num_samples]))
+    }
+
+    subspaces = fit_dekodec(X_conds)
+
+    assert len(subspaces) == 3
+    full_space = np.column_stack(tuple(subspaces.values()))
+    assert full_space.shape == (num_features,num_features)
+    assert np.allclose(full_space.T @ full_space, np.eye(num_features))
+
+    total_vars = {cond: np.var(X,axis=0) for cond,X in X_conds.items()}
+    assert not np.allclose(X_conds['0'] @ subspaces['0_unique'], 0)
+    assert not np.allclose(X_conds['1'] @ subspaces['1_unique'], 0)
+    assert not np.allclose(X_conds['0'] @ subspaces['shared'], 0)
+    assert not np.allclose(X_conds['1'] @ subspaces['shared'], 0)
+    assert np.var(X_conds['0'] @ subspaces['1_unique']).sum() <= 0.01 * total_vars['0'].sum()
+    assert np.var(X_conds['1'] @ subspaces['0_unique']).sum() <= 0.01 * total_vars['1'].sum()
 
 def test_get_cond_unique_basis():
     num_samples = 100
