@@ -4,6 +4,7 @@ import torch
 import pymanopt
 import pymanopt.manifolds
 import pymanopt.optimizers
+import geotorch
 
 def fit_dekodec(X_conds, var_cutoff=0.99, combinations=None):
     """
@@ -44,11 +45,7 @@ def fit_dekodec(X_conds, var_cutoff=0.99, combinations=None):
         cond: get_cond_unique_basis(X_conds,cond,var_cutoff=var_cutoff)
         for cond in X_conds
     }
-    subspaces = orthogonalize_unique_spaces(X_conds,cond_unique_projmats)
-    subspaces['shared'] = max_var_rotate(
-        null_space(np.column_stack(tuple(subspaces.values())).T),
-        np.row_stack(tuple(X_conds.values())),
-    )
+    subspaces = orthogonalize_spaces(X_conds,cond_unique_projmats)
 
     return subspaces
 
@@ -91,9 +88,10 @@ def get_cond_unique_basis(X_conds,which_cond,var_cutoff=0.99):
 
     return cond_unique_projmat[:,:num_unique_dims]
 
-def orthogonalize_unique_spaces(X_conds,cond_unique_projmats):
+def orthogonalize_spaces(X_conds,cond_unique_projmats,backend='pymanopt'):
     """
-    Orthogonalize the unique subspaces of the input data matrices.
+    Return orthogonalized projection matrices for unique and shared subspaces
+    given the input data matrices and the conditional unique projection matrices.
 
     Parameters
     ----------
@@ -113,7 +111,11 @@ def orthogonalize_unique_spaces(X_conds,cond_unique_projmats):
     num_unique_dims = [projmat.shape[1] for projmat in cond_unique_projmats.values()]
     total_unique_dims = np.sum(num_unique_dims)
     if total_unique_dims == 0:
-        raise ValueError('No unique dimensions found')
+        subspaces = {
+            f'{cond.lower()}_unique': np.zeros((arr.shape[1],0)) for cond,arr in  X_conds.items()
+        }
+        subspaces['shared'] = np.eye(next(iter(X_conds.values())).shape[1])
+        return subspaces
 
     Z = torch.from_numpy(np.row_stack(tuple(X_conds.values())))
     Z_uniques = torch.column_stack([
@@ -121,26 +123,38 @@ def orthogonalize_unique_spaces(X_conds,cond_unique_projmats):
         for projmat in cond_unique_projmats.values()
     ])
 
-    manifold = pymanopt.manifolds.Stiefel(Z.shape[1],total_unique_dims)
+    if backend == 'pymanopt':
+        manifold = pymanopt.manifolds.Stiefel(Z.shape[1],total_unique_dims)
+        @pymanopt.function.pytorch(manifold)
+        def cost(Q):
+            return torch.sum(torch.square(Z @ Q - Z_uniques))
+        problem = pymanopt.Problem(manifold,cost)
+        optimizer = pymanopt.optimizers.TrustRegions()
+        result = optimizer.run(problem)
+        Q_all_uniques = flip_positive(result.point)
+    elif backend == 'geotorch':
+        model = torch.nn.Linear(Z.shape[1],total_unique_dims, bias=False)
+        geotorch.grassmannian(model,'weight')
+        torch.optim.Adam(model.parameters(),lr=0.001)
+        def cost(Q):
+            return torch.sum(torch.square(Z @ Q - Z_uniques))
 
-    @pymanopt.function.pytorch(manifold)
-    def cost(Q):
-        return torch.sum(torch.square(Z @ Q - Z_uniques))
+        raise NotImplementedError('Geotorch backend not yet implemented')
+    else:
+        raise ValueError(f'Backend {backend} not recognized')
 
-    problem = pymanopt.Problem(manifold,cost)
-    optimizer = pymanopt.optimizers.TrustRegions()
-    result = optimizer.run(problem)
-    
-    Q_all_uniques = flip_positive(result.point)
-
-    Q_unique = {
+    subspaces = {
         f'{cond.lower()}_unique': arr for cond,arr in zip(
             X_conds.keys(),
             np.split(Q_all_uniques,np.cumsum(num_unique_dims),axis=1)[:-1]
         )
     }
+    subspaces['shared'] = max_var_rotate(
+        null_space(np.column_stack(tuple(subspaces.values())).T),
+        np.row_stack(tuple(X_conds.values())),
+    )
 
-    return Q_unique
+    return subspaces
 
 def get_potent_null(X, var_cutoff=0.99):
     """
@@ -262,7 +276,6 @@ def get_num_projected_dims_to_keep(X,proj_mat,var_cutoff=0.99):
     num_proj_dims = np.sum(proj_var_explained >= proj_dim_var_cutoff)
     
     return num_proj_dims
-
 
 def flip_positive(Q):
     return Q
