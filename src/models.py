@@ -188,10 +188,12 @@ class JointSubspace(BaseEstimator,TransformerMixin):
         )
 
         proj_mat = np.row_stack([model.components_ for model in dim_red_models])
-        if self.orthogonalize:
-            _,_,proj_mat = np.linalg.svd(proj_mat,full_matrices=False)
+        if not self.orthogonalize:
+            self.P_ = proj_mat.T
+        else:
+            _,_,Vt = np.linalg.svd(proj_mat,full_matrices=False)
+            self.P_ = dekodec.max_var_rotate(Vt.T,np.row_stack(X[self.signal]))
 
-        self.P_ = proj_mat.T
         return self
 
     def transform(self,X):
