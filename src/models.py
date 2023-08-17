@@ -278,4 +278,10 @@ class DekODec(BaseEstimator, TransformerMixin):
                     )
                 for subspace_name,proj_mat in self.subspaces.items()
             })
+            .assign(**{
+                f'{self.signal}_split':
+                    lambda df: df[self.signal].apply(
+                        lambda arr: arr @ np.column_stack(tuple(self.subspaces.values()))
+                    )
+            })
         )
