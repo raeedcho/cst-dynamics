@@ -29,19 +29,25 @@ load_params = {
         end_point_name='idx_endTime',
     ),
 }
-joint_pca_model = src.models.JointSubspace(n_comps_per_cond=15,signal='lfads_rates',condition='task',remove_latent_offsets=False)
+joint_pca_model = src.models.JointSubspace(n_comps_per_cond=20,signal='lfads_rates',condition='task',remove_latent_offsets=False)
+dekodec_model = src.models.DekODec(var_cutoff=0.99,signal='lfads_rates_joint_pca',condition='task')
+dekodec_shuffle_model = src.models.DekODec(var_cutoff=0.99,signal='lfads_rates_joint_pca',condition='task_shuffle')
+rng = np.random.default_rng()
 td = (
     src.data.load_clean_data(**load_params)
     .query('task=="RTT" | task=="CST"')
-    .assign(**{'trialtime': lambda x: x['Time from go cue (s)']})
+    .assign(**{
+        'trialtime': lambda df: df['Time from go cue (s)'],
+        'task_shuffle': lambda df: rng.permutation(df['task'].values),
+    })
     .pipe(pyaldata.soft_normalize_signal,signals=['lfads_rates','MC_rates'])
     .pipe(src.data.remove_baseline_rates,signals=['MC_rates','lfads_rates'])
     .pipe(joint_pca_model.fit_transform)
+    .pipe(dekodec_model.fit_transform)
 )
 
-# %% add dekodec model
-dekodec_model = src.models.DekODec(var_cutoff=0.99,signal='lfads_rates_joint_pca',condition='task')
-td = dekodec_model.fit_transform(td)
+# %%
+td_shuffle = dekodec_shuffle_model.fit_transform(td)
 
 #%% Context space
 signal = 'lfads_rates_joint_pca'
@@ -150,9 +156,10 @@ sns.despine(fig=fig,trim=True)
 
 trial_fig, score_fig = src.decoder_analysis.run_decoder_analysis(
     td,
-    'lfads_rates_joint_pca_rtt_unique',
+    'lfads_rates_joint_pca',
     hand_or_cursor='hand',
-    pos_or_vel='vel'
+    pos_or_vel='vel',
+    trace_component=1,
 )
 
 # %% plot individual traces
@@ -161,7 +168,7 @@ def plot_trial_split_space(trial_to_plot,ax_list):
     src.plot.plot_hand_trace(trial_to_plot,ax=ax_list[0],timesig='Time from go cue (s)')
     src.plot.plot_hand_velocity(trial_to_plot,ax_list[1],timesig='Time from go cue (s)')
 
-    sig_list = [f'{signal}_shared',f'{signal}_cst_unique',f'{signal}_rtt_unique']
+    sig_list = [f'{signal}_cst_unique',f'{signal}_rtt_unique',f'{signal}_shared']
     sig_colors = {
         f'{signal}_cst_unique':'C0',
         f'{signal}_rtt_unique':'C1',
@@ -182,7 +189,7 @@ def plot_trial_split_space(trial_to_plot,ax_list):
     ax_list[-1].set_xlabel('Time from go cue (s)')
 
 trials_to_plot = td.groupby('task').sample(n=1).set_index('trial_id')
-fig,axs = plt.subplots(30,len(trials_to_plot),sharex=True,sharey='row',figsize=(10,18))
+fig,axs = plt.subplots(32,len(trials_to_plot),sharex=True,sharey='row',figsize=(10,18))
 fig.tight_layout()
 for colnum,(trial_id,trial) in enumerate(trials_to_plot.iterrows()):
     plot_trial_split_space(trial,axs[:,colnum])
@@ -334,4 +341,217 @@ g = sns.pairplot(
 sns.despine(fig=g.fig,trim=True)
 fig_name = src.util.format_outfile_name(td,postfix='neural_dims_v_vel')
 
+# %% Animate a trial in split subspaces (hand trace, sensorimotor plot, first 2 dims of subspaces)
+from ipywidgets import interact
+from matplotlib.backends.backend_pdf import PdfPages
+from matplotlib.gridspec import GridSpec
+from matplotlib.patches import Rectangle,Circle
+import matplotlib.animation as animation
+import matplotlib as mpl
+
+def animate_trial_timecourse(trial):
+    fig = plt.figure(figsize=(10,6))
+    gs = mpl.gridspec.GridSpec(2,3,figure=fig)
+    beh_ax = fig.add_subplot(gs[0,:2])
+    phase_plot_ax = fig.add_subplot(gs[0,2],sharey=beh_ax)
+    shared_space_ax = fig.add_subplot(gs[1,0])
+    cst_unique_space_ax = fig.add_subplot(gs[1,1])
+    rtt_unique_space_ax = fig.add_subplot(gs[1,2])
+
+    src.plot.plot_hand_trace(trial,ax=beh_ax)
+    beh_blocker = beh_ax.add_patch(Rectangle((0,-100),10,200,color='w',zorder=100))
+    beh_ax.set_xlim([0,6])
+    beh_ax.set_xticks([])
+    beh_ax.set_xlabel('')
+    beh_ax.set_ylabel('Hand position (cm)')
+    sns.despine(ax=beh_ax,trim=True,bottom=True)
+
+    phase_plot_ax.plot([-200,200],[0,0],color='k')
+    phase_plot_ax.plot([0,0],[-50,50],color='k')
+    phase_trace, = phase_plot_ax.plot([],[],color='k')
+    phase_plot_ax.set_xlim([-200,200])
+    phase_plot_ax.set_xlabel('Hand velocity (cm/s)')
+    sns.despine(ax=phase_plot_ax,trim=True)
+
+    shared_space_ax.plot([-0.4,-0.15],[-0.4,-0.4],color='k',lw=5)
+    shared_space_ax.text(-0.35,-0.45,'shared comp 1',fontsize=18)
+    shared_space_ax.plot([-0.4,-0.4],[-0.4,-0.15],color='k',lw=5)
+    shared_space_ax.text(-0.475,-0.3,'shared comp 2',fontsize=18,rotation=90)
+    shared_space_trace, = shared_space_ax.plot([],[],color='k')
+    shared_space_ax.set_xlim([-0.5,0.5])
+    shared_space_ax.set_ylim([-0.5,0.5])
+    shared_space_ax.set_xticks([])
+    shared_space_ax.set_yticks([])
+    sns.despine(ax=shared_space_ax,left=True,bottom=True)
+
+    cst_unique_space_ax.plot([-0.4,-0.15],[-0.4,-0.4],color='k',lw=5)
+    cst_unique_space_ax.text(-0.35,-0.45,'cst unique comp 1',fontsize=18)
+    cst_unique_space_ax.plot([-0.4,-0.4],[-0.4,-0.15],color='k',lw=5)
+    cst_unique_space_ax.text(-0.475,-0.3,'cst unique comp 2',fontsize=18,rotation=90)
+    cst_unique_space_trace, = cst_unique_space_ax.plot([],[],color='k')
+    cst_unique_space_ax.set_xlim([-0.5,0.5])
+    cst_unique_space_ax.set_ylim([-0.5,0.5])
+    cst_unique_space_ax.set_xticks([])
+    cst_unique_space_ax.set_yticks([])
+    sns.despine(ax=cst_unique_space_ax,left=True,bottom=True)
+
+    rtt_unique_space_ax.plot([-0.4,-0.15],[-0.4,-0.4],color='k',lw=5)
+    rtt_unique_space_ax.text(-0.35,-0.45,'rtt unique comp 1',fontsize=18)
+    rtt_unique_space_ax.plot([-0.4,-0.4],[-0.4,-0.15],color='k',lw=5)
+    rtt_unique_space_ax.text(-0.475,-0.3,'rtt unique comp 2',fontsize=18,rotation=90)
+    rtt_unique_space_trace, = rtt_unique_space_ax.plot([],[],color='k')
+    rtt_unique_space_ax.set_xlim([-0.5,0.5])
+    rtt_unique_space_ax.set_ylim([-0.5,0.5])
+    rtt_unique_space_ax.set_xticks([])
+    rtt_unique_space_ax.set_yticks([])
+    sns.despine(ax=rtt_unique_space_ax,left=True,bottom=True)
+
+    plt.tight_layout()
+
+    def plot_trial_timecourse(trial,end_idx=None):
+        beh_blocker.set(x=trial['trialtime'][end_idx])
+
+        phase_trace.set_data(
+            trial['hand_vel'][:end_idx,0],
+            trial['rel_hand_pos'][:end_idx,0],
+        )
+    
+        # first two PCs
+        shared_space_trace.set_data(
+            trial['lfads_rates_joint_pca_shared'][:end_idx,0],
+            trial['lfads_rates_joint_pca_shared'][:end_idx,1],
+        )
+        cst_unique_space_trace.set_data(
+            trial['lfads_rates_joint_pca_cst_unique'][:end_idx,0],
+            trial['lfads_rates_joint_pca_cst_unique'][:end_idx,1],
+        )
+        rtt_unique_space_trace.set_data(
+            trial['lfads_rates_joint_pca_rtt_unique'][:end_idx,0],
+            trial['lfads_rates_joint_pca_rtt_unique'][:end_idx,1],
+        )
+        return [beh_blocker,phase_trace,shared_space_trace,cst_unique_space_trace,rtt_unique_space_trace]
+
+    def init_plot():
+        beh_blocker.set(x=0)
+        phase_trace.set_data([],[])
+        shared_space_trace.set_data([],[])
+        cst_unique_space_trace.set_data([],[])
+        rtt_unique_space_trace.set_data([],[])
+        return [beh_blocker,phase_trace,shared_space_trace,cst_unique_space_trace,rtt_unique_space_trace]
+
+    def animate(frame_time):
+        epoch_fun = src.util.generate_realtime_epoch_fun(
+            start_point_name='idx_goCueTime',
+            rel_end_time=frame_time,
+        )
+        anim_slice = epoch_fun(trial)
+
+        return plot_trial_timecourse(trial,end_idx=anim_slice.stop)
+
+    frame_interval = 30 #ms
+    frames = np.arange(trial['trialtime'][0],trial['trialtime'][-1],frame_interval*1e-3)
+    anim = animation.FuncAnimation(
+        fig,
+        animate,
+        init_func=init_plot,
+        frames = frames,
+        interval = frame_interval,
+        blit = True,
+    )
+
+    return anim
+
+trials_to_plot = td.groupby('task')['trial_id'].sample(n=3,random_state=0).values
+# trials_to_plot=[227,228]
+for trial_to_plot in trials_to_plot:
+    anim = animate_trial_timecourse(td.loc[td['trial_id']==trial_to_plot].squeeze())
+    anim_name = src.util.format_outfile_name(td,postfix=f'trial_{trial_to_plot}_anim')
+    anim.save(os.path.join('../results/20230814_smile_meeting/',anim_name+'.mp4'),writer='ffmpeg',fps=15,dpi=400)
+# %% split subspace variance plots
+
+def plot_split_subspace_variance(td,signal='lfads_rates_joint_pca'):
+    def calculate_percent_variance(arr,col):
+        return np.var(arr[:,col])/np.var(arr,axis=0).sum()
+
+    compared_var = (
+        td
+        .groupby('task')
+        [[f'{signal}',f'{signal}_split']]
+        .agg([
+            lambda s,col=col: calculate_percent_variance(np.row_stack(s),col)
+            for col in range(60)
+        ])
+        .rename({'lfads_rates_joint_pca': 'unsplit','lfads_rates_joint_pca_split': 'split'},axis=1,level=0)
+        .rename(lambda label: label.strip('<lambda_>'),axis=1,level=1)
+        .unstack()
+        .reset_index()
+        .rename({
+            'level_0': 'neural space',
+            'level_1':'component',
+            0: 'fraction variance'
+        },axis=1)
+    )
+
+    sns.catplot(
+        data=compared_var,
+        x='component',
+        y='fraction variance',
+        hue='task',
+        kind='bar',
+        row='neural space',
+        sharex=True,
+        sharey=True,
+        aspect=2,
+        height=3,
+    )
+
+plot_split_subspace_variance(td,signal='lfads_rates_joint_pca')
+plot_split_subspace_variance(td_shuffle,signal='lfads_rates_joint_pca')
+
+
+# fig,axs = plt.subplots(2,1,sharex=True,sharey=True,figsize=(6,6))
+# sns.barplot(
+#     ax=axs[0],
+#     data=unsplit_var,
+#     x='component',
+#     y='fraction variance',
+#     hue='task',
+# )
+# sns.barplot(
+#     ax=axs[1],
+#     data=split_var,
+#     x='component',
+#     y='fraction variance',
+#     hue='task',
+# )
+# sns.despine(fig=fig,trim=True)
+
+# %%
+td_subspace_overlap = (
+    td
+    .pipe(src.data.rebin_data,new_bin_size=0.05)
+    .groupby('task')
+    ['lfads_rates']
+    .pipe(src.subspace_tools.bootstrap_subspace_overlap,num_bootstraps=10,var_cutoff=0.99)
+    .filter(items=['task_data','task_proj','boot_id','subspace_overlap','subspace_overlap_rand'])
+    .assign(within_task=(lambda x: x['task_proj']==x['task_data']))
+    .melt(
+        id_vars=['within_task','boot_id'],
+        value_vars=['subspace_overlap','subspace_overlap_rand'],
+        value_name='Subspace overlap',
+        var_name='is_control',
+    )
+    .assign(is_control=lambda x: x['is_control']=='subspace_overlap_rand')
+    .assign(Category= lambda s: np.where(s['is_control'],'Control',np.where(s['within_task'],'Within','Across')))
+)
+fig,ax = plt.subplots(1,1)
+sns.barplot(
+    ax=ax,
+    data=td_subspace_overlap,
+    x='Subspace overlap',
+    y='Category',
+    color='0.7',
+)
+sns.despine(ax=ax,trim=True)
+plt.tight_layout()
 # %%
