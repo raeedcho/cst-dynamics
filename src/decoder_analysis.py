@@ -61,11 +61,11 @@ def score_models(df,signal,models):
     
     return scores
     
-def run_decoder_analysis(td,signal,hand_or_cursor='hand',pos_or_vel='vel'):
+def run_decoder_analysis(td,signal,hand_or_cursor='hand',pos_or_vel='vel',trace_component=0):
     td_train_test = (
         td
         .assign(
-            **{'True velocity': lambda df: df.apply(lambda s: s[f'{hand_or_cursor}_{pos_or_vel}'][:,0],axis=1)}
+            **{'True velocity': lambda df: df.apply(lambda s: s[f'{hand_or_cursor}_{pos_or_vel}'][:,trace_component],axis=1)}
         )
         .filter(items=[
             'trial_id',

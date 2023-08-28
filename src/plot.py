@@ -92,7 +92,7 @@ def make_trial_raster(trial, ax=None, sig='M1_spikes', events=None, ref_event_id
 
     return ax
 
-def plot_hand_trace(trial,ax=None,timesig='trialtime'):
+def plot_hand_trace(trial,ax=None,timesig='trialtime',trace_component=0):
     if ax is None:
         ax = plt.gca()
 
@@ -120,7 +120,7 @@ def plot_hand_trace(trial,ax=None,timesig='trialtime'):
         for idx_targ_start,idx_targ_end,targ_loc in zip(
             trial['idx_rtgoCueTimes'].astype(int),
             trial['idx_rtHoldTimes'].astype(int),
-            trial['rt_locations'][:,0]-trial['ct_location'][0],
+            trial['rt_locations'][:,trace_component]-trial['ct_location'][trace_component],
         ):
             if not np.isnan(idx_targ_start) and not np.isnan(idx_targ_end):
                 ax.add_patch(Rectangle(
@@ -141,7 +141,7 @@ def plot_hand_trace(trial,ax=None,timesig='trialtime'):
     # cursor
     ax.plot(
         trial[timesig],
-        trial['rel_cursor_pos'][:,0],
+        trial['rel_cursor_pos'][:,trace_component],
         c='b',
         alpha=0.5,
     )
@@ -149,7 +149,7 @@ def plot_hand_trace(trial,ax=None,timesig='trialtime'):
     # hand
     ax.plot(
         trial[timesig],
-        trial['rel_hand_pos'][:,0],
+        trial['rel_hand_pos'][:,trace_component],
         c='k',
     )
     ax.set_ylim(-60,60)
@@ -157,14 +157,14 @@ def plot_hand_trace(trial,ax=None,timesig='trialtime'):
     ax.set_xlabel(timesig)
     sns.despine(ax=ax,trim=True)
 
-def plot_hand_velocity(trial,ax=None,timesig='trialtime'):
+def plot_hand_velocity(trial,ax=None,timesig='trialtime',trace_component=0):
     if ax is None:
         ax = plt.gca()
 
     ax.plot([trial[timesig][0],trial[timesig][-1]],[0,0],'-k')
     ax.plot(
         trial[timesig],
-        trial['hand_vel'][:,0],
+        trial['hand_vel'][:,trace_component],
         color='k',
     )
 
