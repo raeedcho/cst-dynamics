@@ -1,2 +1,9 @@
 project:
-  output-dir: reports
+  output-dir: /Users/raeed/Library/Mobile Documents/iCloud~md~obsidian/Documents/Wiki/0-projects/cst-rtt-subspace-split
+format:
+  commonmark:
+    variant: +yaml_metadata_block
+fig-format: svg
+execute:
+  cache: true
+  freeze: auto
