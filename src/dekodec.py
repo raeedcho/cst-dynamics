@@ -210,7 +210,7 @@ def get_dimensionality(X, var_cutoff=0.99):
         Eigenvalues of the matrix.
     """
 
-    assert 0 < var_cutoff < 1, 'Variance cutoff must be between 0 and 1'
+    assert 0 < var_cutoff <= 1, 'Variance cutoff must be between 0 and 1'
 
     X_centered = X - np.mean(X, axis=0)
     _, S, _ = np.linalg.svd(X_centered, full_matrices=False)
@@ -218,6 +218,9 @@ def get_dimensionality(X, var_cutoff=0.99):
     eigenvalues = S**2
     cumulative_variance_explained = np.cumsum(eigenvalues) / np.sum(eigenvalues)
     num_dims = np.sum(cumulative_variance_explained <= var_cutoff) + 1
+
+    if num_dims > X.shape[1]:
+        num_dims = X.shape[1]
 
     return num_dims, eigenvalues
 
