@@ -3,19 +3,13 @@ import src
 
 import pyaldata
 import numpy as np
-import pandas as pd
 import yaml
 
-from sklearn.decomposition import PCA, TruncatedSVD
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
-from sklearn.linear_model import LinearRegression
-from sklearn.model_selection import GroupShuffleSplit
-from src.models import SSA
 
 import seaborn as sns
 import matplotlib.pyplot as plt
 import k3d
-import scipy.io as sio
 
 with open("../params.yaml", "r") as params_file:
     params = yaml.safe_load(params_file)
@@ -158,8 +152,8 @@ trial_fig, score_fig = src.decoder_analysis.run_decoder_analysis(
     td,
     'lfads_rates_joint_pca',
     hand_or_cursor='hand',
-    pos_or_vel='vel',
-    trace_component=1,
+    pos_or_vel='acc',
+    trace_component=0,
 )
 
 # %% plot individual traces
@@ -260,7 +254,6 @@ td_temp = (
 )
 
 
-# %%
 def plot_MC_trial_split_space_2D(trial_to_plot,ax_list,color='k'):
     sig_list = [
         f'{sig_temp}_joint_pca_shared',
@@ -479,7 +472,7 @@ def plot_split_subspace_variance(td,signal='lfads_rates_joint_pca'):
         [[f'{signal}',f'{signal}_split']]
         .agg([
             lambda s,col=col: calculate_percent_variance(np.row_stack(s),col)
-            for col in range(60)
+            for col in range(40)
         ])
         .rename({'lfads_rates_joint_pca': 'unsplit','lfads_rates_joint_pca_split': 'split'},axis=1,level=0)
         .rename(lambda label: label.strip('<lambda_>'),axis=1,level=1)
