@@ -4,6 +4,8 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
 import seaborn as sns
 
+from . import subspace_tools
+
 def make_trial_raster(trial, ax=None, sig='M1_spikes', events=None, ref_event_idx=0):
     '''
     Make a raster plot for a given trial
@@ -171,3 +173,36 @@ def plot_hand_velocity(trial,ax=None,timesig='trialtime',trace_component=0):
     ax.set_ylabel('Hand position (cm)')
     ax.set_xlabel(timesig)
     sns.despine(ax=ax,trim=True)
+
+def plot_split_subspace_variance(td,signal):
+    compared_var = (
+        td
+        .groupby('task')
+        [[f'{signal}',f'{signal}_split']]
+        .agg([
+            lambda s,col=col: subspace_tools.calculate_fraction_variance(np.row_stack(s),col)
+            for col in range(40)
+        ])
+        .rename({'lfads_rates_joint_pca': 'unsplit','lfads_rates_joint_pca_split': 'split'},axis=1,level=0)
+        .rename(lambda label: label.strip('<lambda_>'),axis=1,level=1)
+        .unstack()
+        .reset_index()
+        .rename({
+            'level_0': 'neural space',
+            'level_1':'component',
+            0: 'fraction variance'
+        },axis=1)
+    )
+
+    sns.catplot(
+        data=compared_var,
+        x='component',
+        y='fraction variance',
+        hue='task',
+        kind='bar',
+        row='neural space',
+        sharex=True,
+        sharey=True,
+        aspect=2,
+        height=3,
+    )
