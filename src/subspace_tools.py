@@ -61,6 +61,21 @@ def find_joint_subspace(df,signal,condition='task',num_dims=15,remove_mean=False
 
     return vt.T
 
+def frac_var_explained_by_subspace(X,subspace):
+    '''
+    Calculate the fraction of variance explained by a subspace
+
+    Arguments:
+        X - (numpy array) data to project
+        subspace - (numpy array) basis set to project onto
+
+    Returns:
+        (float) fraction of variance explained by subspace
+    '''
+    X_var = np.var(X,axis=0).sum()
+    X_cov = np.cov(X,rowvar=False)
+    return np.trace(subspace.T @ X_cov @ subspace)/X_var
+
 def subspace_overlap_index(X,Y,var_cutoff=0.99):
     '''
     Calculate the subspace overlap index (from Elsayed et al. 2016)
@@ -79,12 +94,7 @@ def subspace_overlap_index(X,Y,var_cutoff=0.99):
     assert X.ndim == 2, 'X must be a 2D array'
     assert Y.ndim == 2, 'Y must be a 2D array'
 
-    X_var = np.var(X,axis=0).sum()
-    X_cov = np.cov(X,rowvar=False)
-    Y_potent,_ = dekodec.get_potent_null(Y,var_cutoff=var_cutoff)
-    soi = np.trace(Y_potent.T @ X_cov @ Y_potent)/X_var
-
-    return soi
+    return frac_var_explained_by_subspace(X,Y_potent)
 
 def bootstrap_subspace_overlap(signal_grouped,num_bootstraps=100,var_cutoff=0.99):
     '''
@@ -136,6 +146,9 @@ def bootstrap_subspace_overlap(signal_grouped,num_bootstraps=100,var_cutoff=0.99
     )
 
     return signal_boots
+
+def calculate_fraction_variance(arr,col):
+    return np.var(arr[:,col])/np.var(arr,axis=0).sum()
 
 def calc_projected_variance(X,proj_matrix):
     '''
