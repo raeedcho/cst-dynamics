@@ -1,5 +1,7 @@
 import pandas as pd
+import numpy as np
 import pyaldata
+from . import data
 
 def crystalize_dataframe(td,sig_guide=None):
     '''
@@ -22,22 +24,45 @@ def crystalize_dataframe(td,sig_guide=None):
     # TODO: check that signals are in the dataframe and are valid signals
 
     if sig_guide is None:
-        sig_guide = {sig: None for sig in pyaldata.get_time_varying_fields(td)}
+        sig_guide = pyaldata.get_time_varying_fields(td)
 
     if type(sig_guide) is list:
-        sig_guide = {sig: None for sig in sig_guide}
+        sig_guide = {
+            signame: (
+                np.arange(td[signame].values[0].shape[1])
+                if td[signame].values[0].ndim == 2 else np.arange(1)
+            )
+            for signame in sig_guide
+        }
 
     assert type(sig_guide) is dict, "sig_guide must be a dictionary"
 
+    temp = (
+        td
+        .pipe(data.add_trial_time,column_name='trial time')
+        .set_index(['monkey','session_date','task','result','trial_id'])
+        .filter(items=['trial time']+list(sig_guide.keys()))
+    )
+
     df = pd.concat(
         [
-            pd.concat([pd.DataFrame(trial[sig],columns=guide) for sig,guide in sig_guide.items()], axis=1, keys=sig_guide.keys()) 
-            for _,trial in td.iterrows()
+            pd.concat(
+                [
+                    pd.DataFrame(
+                        trial[sig],
+                        columns=guide,
+                        index=trial['trial time'],
+                    ).rename_axis(index='trial time')
+                    for sig,guide in sig_guide.items()
+                ],
+                axis=1,
+                keys=sig_guide.keys()
+            ).rename_axis(columns=['signal','channel']) 
+            for _,trial in temp.iterrows()
         ],
         axis=0,
-        keys=td['trial_id'],
+        keys=temp.index,
     )
-    df.index.rename('Time bin',level=1,inplace=True)
     return df
 
 def extract_metaframe(td,metacols=None):
