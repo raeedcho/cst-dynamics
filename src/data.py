@@ -358,6 +358,12 @@ def add_trial_time(trial_data, ref_event=None, column_name="trialtime"):
     return trial_data
 
 @pyaldata.copy_td
+def add_trial_state(trial_data,column_name='trial state'):
+    return td.assign(**{
+        column_name: pd.NA
+    })
+
+@pyaldata.copy_td
 def remove_artifact_trials(trial_data, rate_thresh=350,verbose=False):
     '''
     Remove trials with neural artifacts (mostly in Prez when he moves his head).
