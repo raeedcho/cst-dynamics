@@ -174,7 +174,7 @@ def plot_hand_velocity(trial,ax=None,timesig='trialtime',trace_component=0):
     ax.set_xlabel(timesig)
     sns.despine(ax=ax,trim=True)
 
-def plot_split_subspace_variance(td,signal):
+def plot_split_subspace_variance(td,signal='lfads_rates_joint_pca'):
     compared_var = (
         td
         .groupby('task')
@@ -183,7 +183,7 @@ def plot_split_subspace_variance(td,signal):
             lambda s,col=col: subspace_tools.calculate_fraction_variance(np.row_stack(s),col)
             for col in range(40)
         ])
-        .rename({'lfads_rates_joint_pca': 'unsplit','lfads_rates_joint_pca_split': 'split'},axis=1,level=0)
+        .rename({f'{signal}': 'unsplit',f'{signal}_split': 'split'},axis=1,level=0)
         .rename(lambda label: label.strip('<lambda_>'),axis=1,level=1)
         .unstack()
         .reset_index()
@@ -205,4 +205,27 @@ def plot_split_subspace_variance(td,signal):
         sharey=True,
         aspect=2,
         height=3,
+    )
+
+def plot_single_trial_split_var(td,signal='lfads_rates_joint_pca'):
+    subspace_var = (
+        td
+        .assign(**{
+            'CST space variance': lambda df: df.apply(
+                lambda row: np.var(row[f'{signal}_cst_unique'],axis=0).sum()/np.var(row[f'{signal}'],axis=0).sum(),
+                axis=1,
+            ),
+            'RTT space variance': lambda df: df.apply(
+                lambda row: np.var(row[f'{signal}_rtt_unique'],axis=0).sum()/np.var(row[f'{signal}'],axis=0).sum(),
+                axis=1,
+            ),
+        })
+    )
+
+    return sns.relplot(
+        data=subspace_var,
+        x='CST space variance',
+        y='RTT space variance',
+        hue='task',
+        hue_order=['CST','RTT'],
     )
