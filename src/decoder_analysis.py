@@ -60,6 +60,17 @@ def score_models(df,signal,models):
             scores[(task,model_name)] = model.score(np.row_stack(test_df[signal]),test_df['True velocity'])
     
     return scores
+
+def score_trials(df,signal,models):
+    trial_scores = (
+        df
+        .groupby(['task','trial_id'])
+        .apply(lambda trial: pd.Series({
+            f'{model_name} score': model.score(np.row_stack(trial[signal]),trial['True velocity'])
+            for model_name,model in models.items()
+        }))
+    )
+    return trial_scores
     
 def run_decoder_analysis(td,signal,hand_or_cursor='hand',pos_or_vel='vel',trace_component=0):
     td_train_test = (
@@ -88,6 +99,7 @@ def run_decoder_analysis(td,signal,hand_or_cursor='hand',pos_or_vel='vel',trace_
     
     models = fit_models(td_train_test,signal)
     scores = score_models(td_train_test,signal,models)
+    trial_scores = score_trials(td_train_test.loc[td_train_test['Test set']],signal,models)
     td_pred = (
         td_train_test
         .pipe(model_predict,signal,models)
@@ -131,5 +143,16 @@ def run_decoder_analysis(td,signal,hand_or_cursor='hand',pos_or_vel='vel',trace_
         annot_kws={'fontsize': 21},
         cmap='gray',
     )
+
+    single_trial_scatter = sns.relplot(
+        data=trial_scores.reset_index(),
+        x='CST score',
+        y='RTT score',
+        hue='task',
+        hue_order=['CST','RTT'],
+        palette=['C0','C1'],
+        kind='scatter',
+    )
+    single_trial_scatter.refline(x=0,y=0)
 
     return g.fig, heatmap_fig
