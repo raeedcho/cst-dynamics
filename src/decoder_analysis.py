@@ -72,8 +72,8 @@ def score_trials(df,signal,models):
     )
     return trial_scores
     
-def run_decoder_analysis(td,signal,hand_or_cursor='hand',pos_or_vel='vel',trace_component=0):
-    td_train_test = (
+def precondition_td(td,signal,hand_or_cursor='hand',pos_or_vel='vel',trace_component=0):
+    return (
         td
         .assign(
             **{'True velocity': lambda df: df.apply(lambda s: s[f'{hand_or_cursor}_{pos_or_vel}'][:,trace_component],axis=1)}
@@ -96,7 +96,9 @@ def run_decoder_analysis(td,signal,hand_or_cursor='hand',pos_or_vel='vel',trace_
         })
         .assign(**{'Test set': lambda df: get_test_labels(df)})
     )
-    
+
+def run_decoder_analysis(td,signal,hand_or_cursor='hand',pos_or_vel='vel',trace_component=0):
+    td_train_test = precondition_td(td,signal,hand_or_cursor,pos_or_vel,trace_component)
     models = fit_models(td_train_test,signal)
     scores = score_models(td_train_test,signal,models)
     trial_scores = score_trials(td_train_test.loc[td_train_test['Test set']],signal,models)
@@ -154,5 +156,6 @@ def run_decoder_analysis(td,signal,hand_or_cursor='hand',pos_or_vel='vel',trace_
         kind='scatter',
     )
     single_trial_scatter.refline(x=0,y=0)
+    single_trial_scatter.set(xlim=(-5,1),ylim=(-5,1))
 
     return g.fig, heatmap_fig
