@@ -196,15 +196,15 @@ def plot_split_subspace_variance(td,signal='lfads_rates_joint_pca'):
 
     sns.catplot(
         data=compared_var,
-        x='component',
-        y='fraction variance',
+        y='component',
+        x='fraction variance',
         hue='task',
         kind='bar',
-        row='neural space',
+        col='neural space',
         sharex=True,
         sharey=True,
-        aspect=2,
-        height=3,
+        aspect=0.5,
+        height=6,
     )
 
 def plot_single_trial_split_var(td,signal='lfads_rates_joint_pca'):
