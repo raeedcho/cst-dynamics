@@ -65,6 +65,37 @@ def crystalize_dataframe(td,sig_guide=None):
     )
     return df
 
+def express_crystallize(td,single_cols,array_cols):
+    '''
+    Expose dataframe columns with numpy arrays as hierarchical columns
+
+    Arguments:
+        - td (pd.DataFrame): dataframe in form of PyalData
+        - single_cols (list of str): columns to include as single columns
+        - array_cols (list of str): columns to include as hierarchical columns
+
+    Returns:
+        - (pd.DataFrame): crystallized dataframe with hierarchical index on both axes:
+            axis 0: trial id, time bin in trial
+            axis 1: signal name, signal dimension
+    '''
+    return (
+        pd.concat(
+            [td[col].rename(0) for col in single_cols] +
+            [
+                pd.DataFrame(
+                    data = np.row_stack(td[array_name]),
+                    index = td[array_name].index,
+                ) for array_name in array_cols
+            ],
+            axis=1,
+            keys=single_cols+array_cols,
+        )
+        #.assign(**{(col,0): td[col] for col in single_cols})
+        [single_cols+array_cols]
+        .rename_axis(columns=['signal','channel'])
+    )
+
 def extract_metaframe(td,metacols=None):
     '''
     Extracts a metaframe from a trial dataframe.
@@ -153,3 +184,26 @@ def extract_trial_event_times(td,events=None):
     ) * td['bin_size'].iloc[0]
     # events_df.columns = pd.MultiIndex.from_product([events_df.columns,['event']])
     return events_df
+    
+def hierarchical_assign(df,assign_dict):
+    '''
+    Extends pandas.DataFrame.assign to work with hierarchical columns
+
+    Parameters
+    ----------
+    df : pandas.DataFrame
+        DataFrame to assign to
+    assign_dict : dict of pandas.DataFrame or callable
+        dictionary of dataframes to assign to df
+    '''
+    return (
+        df
+        .join(
+            pd.concat(
+                [val(df) if callable(val) else val for val in assign_dict.values()],
+                axis=1,
+                keys=assign_dict.keys(),
+                names=['signal','channel'],
+            )
+        )
+    )
