@@ -5,5 +5,4 @@ format:
     variant: +yaml_metadata_block
 fig-format: svg
 execute:
-  cache: true
   freeze: auto
