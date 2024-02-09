@@ -32,9 +32,9 @@ def fit_models(df,signal,target_name='True velocity'):
         )
 
     # joint models
-    models['Joint'] = LinearRegression()
+    models['Dual'] = LinearRegression()
     train_df = df.loc[~df['Test set']].groupby('task').sample(n=30000)
-    models['Joint'].fit(
+    models['Dual'].fit(
         np.row_stack(train_df[signal]),
         train_df[target_name],
     )
@@ -45,7 +45,7 @@ def model_predict(df,signal,models):
     ret_df = df.copy()
     for model_name,model in models.items():
         ret_df = ret_df.assign(**{
-            f'{model_name} predicted': model.predict(np.row_stack(ret_df[signal]))
+            f'{model_name} calibrated': model.predict(np.row_stack(ret_df[signal]))
         })
     return ret_df
 
@@ -137,7 +137,7 @@ def run_decoder_analysis(td,signal,hand_or_cursor='Hand',pos_or_vel='velocity',t
         .pipe(model_predict,signal,models)
         .melt(
             id_vars=['trial_id','Time from go cue (s)','task'],
-            value_vars=[f'{hand_or_cursor} {pos_or_vel}','CST predicted','RTT predicted','Joint predicted'],
+            value_vars=[f'{hand_or_cursor} {pos_or_vel}','CST calibrated','RTT calibrated','Dual calibrated'],
             var_name='Model',
             value_name=f'{hand_or_cursor} {pos_or_vel} (cm/s)',
         )
@@ -150,7 +150,7 @@ def run_decoder_analysis(td,signal,hand_or_cursor='Hand',pos_or_vel='velocity',t
         x='Time from go cue (s)',
         y=f'{hand_or_cursor} {pos_or_vel} (cm/s)',
         hue='Model',
-        hue_order=[f'{hand_or_cursor} {pos_or_vel}','CST predicted','RTT predicted','Joint predicted'],
+        hue_order=[f'{hand_or_cursor} {pos_or_vel}','CST calibrated','RTT calibrated','Dual calibrated'],
         palette=['k','C0','C1','0.5'],
         kind='line',
         row='trial_id',
@@ -179,7 +179,7 @@ def run_decoder_analysis(td,signal,hand_or_cursor='Hand',pos_or_vel='velocity',t
     single_trial_scatter = sns.jointplot(
         data=trial_scores.reset_index(),
         y='RTT score',
-        x='Joint score',
+        x='Dual score',
         hue='task',
         hue_order=['CST','RTT'],
         palette=['C0','C1'],
