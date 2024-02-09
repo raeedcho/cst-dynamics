@@ -170,7 +170,7 @@ def plot_hand_velocity(trial,ax=None,timesig='trialtime',trace_component=0):
         color='k',
     )
 
-    ax.set_ylabel('Hand position (cm)')
+    ax.set_ylabel('Hand velocity (cm/s)')
     ax.set_xlabel(timesig)
     sns.despine(ax=ax,trim=True)
 
