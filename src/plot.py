@@ -159,6 +159,21 @@ def plot_hand_trace(trial,ax=None,timesig='trialtime',trace_component=0):
     ax.set_xlabel(timesig)
     sns.despine(ax=ax,trim=True)
 
+def plot_hand_acc(trial,ax=None,timesig='trialtime',trace_component=0):
+    if ax is None:
+        ax = plt.gca()
+
+    ax.plot([trial[timesig][0],trial[timesig][-1]],[0,0],'-k')
+    ax.plot(
+        trial[timesig],
+        trial['hand_acc'][:,trace_component],
+        color='k',
+    )
+
+    ax.set_ylabel('Hand acceleration (cm/s^2)')
+    ax.set_xlabel(timesig)
+    sns.despine(ax=ax,trim=True)
+
 def plot_hand_velocity(trial,ax=None,timesig='trialtime',trace_component=0):
     if ax is None:
         ax = plt.gca()
