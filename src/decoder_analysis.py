@@ -19,7 +19,7 @@ def fit_models(df,signal,target_name='True velocity'):
         .groupby('Test set')
         .get_group(False)
         .groupby('task')
-        .sample(n=60000)
+        .sample(n=30000)
     )
     # individual models
     models = {}
@@ -49,7 +49,7 @@ def model_predict(df,signal,models):
         })
     return ret_df
 
-def score_models(df,signal,models):
+def score_models(df,signal,models,target_name='True velocity'):
     scores = pd.Series(index=pd.MultiIndex.from_product(
         [df['task'].unique(),models.keys()],
         names=['Test data','Train data']
@@ -57,7 +57,7 @@ def score_models(df,signal,models):
     for task in df['task'].unique():
         for model_name, model in models.items():
             test_df = df.loc[df['Test set'] & (df['task']==task)]
-            scores[(task,model_name)] = model.score(np.row_stack(test_df[signal]),test_df['True velocity'])
+            scores[(task,model_name)] = model.score(np.row_stack(test_df[signal]),test_df[target_name])
     
     return scores
 
@@ -96,6 +96,7 @@ def precondition_td(td,signal,trace_component=0):
         .assign(
             **{'Hand position': lambda df: df.apply(lambda s: s['hand_pos'][:,trace_component],axis=1)},
             **{'Hand velocity': lambda df: df.apply(lambda s: s['hand_vel'][:,trace_component],axis=1)},
+            **{'Hand acceleration': lambda df: df.apply(lambda s: s['hand_acc'][:,trace_component],axis=1)},
             **{'Cursor position': lambda df: df.apply(lambda s: s['cursor_pos'][:,trace_component],axis=1)},
             **{'Cursor velocity': lambda df: df.apply(lambda s: s['cursor_vel'][:,trace_component],axis=1)},
         )
@@ -105,6 +106,7 @@ def precondition_td(td,signal,trace_component=0):
             'task',
             'Hand position',
             'Hand velocity',
+            'Hand acceleration',
             'Cursor position',
             'Cursor velocity',
             signal,
@@ -113,6 +115,7 @@ def precondition_td(td,signal,trace_component=0):
             'Time from go cue (s)',
             'Hand position',
             'Hand velocity',
+            'Hand acceleration',
             'Cursor position',
             'Cursor velocity',
             signal,
@@ -121,6 +124,7 @@ def precondition_td(td,signal,trace_component=0):
             'Time from go cue (s)': float,
             'Hand position': float,
             'Hand velocity': float,
+            'Hand acceleration': float,
             'Cursor position': float,
             'Cursor velocity': float,
         })
@@ -128,10 +132,10 @@ def precondition_td(td,signal,trace_component=0):
     )
 
 def run_decoder_analysis(td,signal,hand_or_cursor='Hand',pos_or_vel='velocity',trace_component=0):
-    td_train_test = precondition_td(td,signal,hand_or_cursor,pos_or_vel,trace_component)
+    td_train_test = precondition_td(td,signal,trace_component=trace_component)
     models = fit_models(td_train_test,signal,target_name=f'{hand_or_cursor} {pos_or_vel}')
-    scores = score_models(td_train_test,signal,models)
-    trial_scores = score_trials(td_train_test.loc[td_train_test['Test set']],signal,models)
+    scores = score_models(td_train_test,signal,models,target_name=f'{hand_or_cursor} {pos_or_vel}')
+    trial_scores = score_trials(td_train_test.loc[td_train_test['Test set']],signal,models,target_name=f'{hand_or_cursor} {pos_or_vel}')
     td_pred = (
         td_train_test
         .pipe(model_predict,signal,models)
@@ -179,7 +183,7 @@ def run_decoder_analysis(td,signal,hand_or_cursor='Hand',pos_or_vel='velocity',t
     single_trial_scatter = sns.jointplot(
         data=trial_scores.reset_index(),
         y='RTT score',
-        x='Dual score',
+        x='CST score',
         hue='task',
         hue_order=['CST','RTT'],
         palette=['C0','C1'],
