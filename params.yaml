@@ -22,3 +22,6 @@ submovement_decomposition:
   bin_size: 0.010
   keep_unsorted: True
   verbose: True
+subspace_split:
+  train_size: 0.5
+  save_train_data: False

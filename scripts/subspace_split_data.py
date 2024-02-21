@@ -1,6 +1,8 @@
 import src
 import pyaldata
 import yaml
+from sklearn.model_selection import train_test_split
+from sklearn.pipeline import Pipeline
 
 def main():
     with open("../params.yaml", "r") as params_file:
@@ -15,8 +17,6 @@ def main():
         ),
     }
 
-    joint_pca_model = src.models.JointSubspace(n_comps_per_cond=20,signal='lfads_rates',condition='task',remove_latent_offsets=False)
-    dekodec_model = src.models.DekODec(var_cutoff=0.99,signal='lfads_rates_joint_pca',condition='task')
     td = (
         src.data.load_clean_data(**load_params)
         .query('task=="RTT" | task=="CST"')
@@ -25,11 +25,23 @@ def main():
         })
         .pipe(pyaldata.soft_normalize_signal,signals=['lfads_rates','MC_rates'])
         .pipe(src.data.remove_baseline_rates,signals=['MC_rates','lfads_rates'])
-        .pipe(joint_pca_model.fit_transform)
-        .pipe(dekodec_model.fit_transform)
     )
 
-    td.to_pickle('../results/dekodec/Prez_20220721_dekodec_split.pkl')
+    if params['subspace_split']['train_size'] < 1:
+        td_train, td_test = train_test_split(td,train_size=params['subspace_split']['train_size'],stratify=td['task'])
+    elif params['subspace_split']['train_size'] == 1:
+        td_train = td
+        td_test = td
+    
+    subspace_split_pipeline = Pipeline([
+        ('joint_pca',src.models.JointSubspace(n_comps_per_cond=20,signal='lfads_rates',condition='task',remove_latent_offsets=False)),
+        ('dekodec',src.models.DekODec(var_cutoff=0.99,signal='lfads_rates_joint_pca',condition='task')),
+    ])
+
+    td_train = subspace_split_pipeline.fit_transform(td_train)
+    td_test = subspace_split_pipeline.transform(td_test)
+
+    td_test.to_pickle('../results/dekodec/Prez_20220721_dekodec_split_test.pkl')
 
 if __name__=='__main__':
     main()
