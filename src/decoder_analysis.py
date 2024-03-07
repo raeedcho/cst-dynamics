@@ -5,15 +5,15 @@ import seaborn as sns
 from sklearn.linear_model import LinearRegression
 from sklearn.model_selection import GroupShuffleSplit
 
-def get_test_labels(df,signal='MC_rates'):
-    gss = GroupShuffleSplit(n_splits=1,test_size=0.25)
+def get_test_labels(df,test_size=0.25):
+    gss = GroupShuffleSplit(n_splits=1,test_size=test_size)
     _,test = next(gss.split(
         df['Hand velocity'],
         groups=df['trial_id'],
     ))
     return np.isin(np.arange(df.shape[0]),test)
 
-def fit_models(df,signal,target_name='True velocity'):
+def fit_models(df: pd.DataFrame,signal,target_name='True velocity'):
     subsampled_training_df = (
         df
         .groupby('Test set')
@@ -147,15 +147,20 @@ def run_decoder_analysis(td,signal,hand_or_cursor='Hand',pos_or_vel='velocity',t
         )
     )
     
-    trials_to_plot=[292,145]
-    # trials_to_plot=td_pred.groupby('task').sample(n=1)['trial_id']
+    #trials_to_plot=[292,145]
+    #trials_to_plot=[246,169]
+    #trials_to_plot=[11,169]
+    trials_to_plot=[119,169]
+    #trials_to_plot=td_pred.groupby('task').sample(n=1)['trial_id']
     g=sns.relplot(
         data=td_pred.loc[np.isin(td_pred['trial_id'],trials_to_plot)],
         x='Time from go cue (s)',
         y=f'{hand_or_cursor} {pos_or_vel} (cm/s)',
         hue='Model',
-        hue_order=[f'{hand_or_cursor} {pos_or_vel}','CST calibrated','RTT calibrated','Dual calibrated'],
-        palette=['k','C0','C1','0.5'],
+        # hue_order=[f'{hand_or_cursor} {pos_or_vel}','CST calibrated','RTT calibrated','Dual calibrated'],
+        # palette=['k','C0','C1','0.5'],
+        hue_order=[f'{hand_or_cursor} {pos_or_vel}','CST calibrated','RTT calibrated'],
+        palette=['k','C0','C1'],
         kind='line',
         row='trial_id',
         row_order=trials_to_plot,
@@ -172,7 +177,7 @@ def run_decoder_analysis(td,signal,hand_or_cursor='Hand',pos_or_vel='velocity',t
     heatmap_fig,ax = plt.subplots(1,1)
     sns.heatmap(
         ax=ax,
-        data=scores.unstack(),
+        data=scores.unstack()[['CST','RTT']],
         vmin=0,
         vmax=1,
         annot=True,
@@ -197,3 +202,76 @@ def run_decoder_analysis(td,signal,hand_or_cursor='Hand',pos_or_vel='velocity',t
     # single_trial_scatter.plot_joint([-1,1],[-1,1],linestyle='--',color='.5')
 
     return g.fig, heatmap_fig
+
+def trial_dropout_analysis(
+    df_train: pd.DataFrame,
+    df_test: pd.DataFrame,
+    signal: str,
+    target_name: str,
+    drop_style: str = 'max',
+):
+    """
+    Perform trial dropout analysis by iteratively finding which training trial
+    impacts the model performance the most. Iterates by removing the most impactful
+    trial and re-running the analysis until there are no trials left to remove.
+
+    Produces a numpy array of model performance as a function of the number of
+    trials removed.
+
+    Parameters:
+    - df_train: Training data
+    - df_test: Test data
+    - signal: Signal column to include in the filtered trial data
+    - target_name: Target column to predict
+
+    Returns:
+    - Dropout analysis plot
+    - Ordered list of removed trials (by trial_id)
+    """
+
+    df_test = (
+        df_test
+        .assign(**{'Validation': lambda df: get_test_labels(df,test_size=0.5)})
+    )
+    validation_df = df_test.loc[df_test['Validation']]
+    df_test = df_test.loc[~df_test['Validation']]
+
+    def drop_trial(df,trial_id):
+        return df.loc[df['trial_id']!=trial_id]
+    
+    def train_score(train_set: pd.DataFrame,test_set: pd.DataFrame) -> float:
+        return (
+            LinearRegression()
+            .fit(
+                np.row_stack(train_set[signal]),
+                train_set[target_name],
+            )
+            .score(
+                np.row_stack(test_set[signal]),
+                test_set[target_name],
+            )
+        )
+
+    dropped_scores = np.zeros(len(df_train['trial_id'].unique())-1)
+    dropped_trials = np.zeros(len(df_train['trial_id'].unique())-1,dtype=int)
+    for dropped_trial_num in range(len(df_train['trial_id'].unique())-1):
+        dropped_scores[dropped_trial_num] = train_score(df_train,df_test)
+
+        if drop_style == 'random':
+            dropped_trials[dropped_trial_num] = np.random.choice(df_train['trial_id'].unique())
+        else:
+            score_without_trial: dict(float) = {}
+            for trial_id in df_train['trial_id'].unique():
+                df_train_dropped = drop_trial(df_train,trial_id)
+                score_without_trial[trial_id] = train_score(df_train_dropped,validation_df)
+            
+            if drop_style == 'max':
+                dropped_trials[dropped_trial_num] = max(score_without_trial,key=score_without_trial.get)
+            elif drop_style == 'min':
+                dropped_trials[dropped_trial_num] = min(score_without_trial,key=score_without_trial.get)
+            else:
+                raise ValueError(f"Invalid drop_style: {drop_style}. Must be 'max', 'min', or 'random'.")
+
+        df_train = drop_trial(df_train,dropped_trials[dropped_trial_num])
+
+    return dropped_scores, dropped_trials

@@ -222,6 +222,7 @@ def plot_split_subspace_variance(td,signal='lfads_rates_joint_pca'):
         height=6,
     )
 
+import plotly.express as px
 def plot_single_trial_split_var(td,signal='lfads_rates_joint_pca'):
     subspace_var = (
         td
@@ -236,11 +237,27 @@ def plot_single_trial_split_var(td,signal='lfads_rates_joint_pca'):
             ),
         })
     )
-
-    return sns.relplot(
-        data=subspace_var,
+    
+    fig = px.scatter(
+        subspace_var,
         x='CST space variance',
         y='RTT space variance',
-        hue='task',
-        hue_order=['CST','RTT'],
+        color='task',
+        hover_data=['trial_id'],
+        marginal_x='violin',
+        marginal_y='violin',
+        template='plotly_white',
+        width=600,
+        height=600,
+        color_discrete_sequence=px.colors.qualitative.T10,
     )
+    fig.show()
+    print(subspace_var.set_index('trial_id').loc[11,['task','CST space variance','RTT space variance']])
+
+    # return sns.relplot(
+    #     data=subspace_var,
+    #     x='CST space variance',
+    #     y='RTT space variance',
+    #     hue='task',
+    #     hue_order=['CST','RTT'],
+    # )
