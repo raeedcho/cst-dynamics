@@ -4,6 +4,8 @@ import torch
 from sklearn.base import TransformerMixin, BaseEstimator
 from sklearn.decomposition import TruncatedSVD,PCA
 
+from . import dekodec
+
 class SSA(object):
     def __init__(
         self,
@@ -186,10 +188,12 @@ class JointSubspace(BaseEstimator,TransformerMixin):
         )
 
         proj_mat = np.row_stack([model.components_ for model in dim_red_models])
-        if self.orthogonalize:
-            _,_,proj_mat = np.linalg.svd(proj_mat,full_matrices=False)
+        if not self.orthogonalize:
+            self.P_ = proj_mat.T
+        else:
+            _,_,Vt = np.linalg.svd(proj_mat,full_matrices=False)
+            self.P_ = dekodec.max_var_rotate(Vt.T,np.row_stack(X[self.signal]))
 
-        self.P_ = proj_mat.T
         return self
 
     def transform(self,X):
@@ -224,5 +228,60 @@ class JointSubspace(BaseEstimator,TransformerMixin):
                 })
             )
 
-class SubspaceSplitter(BaseEstimator,TransformerMixin):
-    pass
+class DekODec(BaseEstimator, TransformerMixin):
+    def __init__(
+            self,
+            var_cutoff=0.99,
+            signal=None,
+            condition=None,
+        ):
+        assert signal is not None, "Must provide signal column name"
+        assert condition is not None, "Must provide condition column name"
+
+        self.var_cutoff = var_cutoff
+        self.signal = signal
+        self.condition = condition
+
+    def fit(self, X, y=None):
+        X_conds_dict = (
+            X
+            .groupby(self.condition)
+            [self.signal]
+            .agg(np.row_stack)
+            .to_dict()
+        )
+
+        self.subspaces = dekodec.fit_dekodec(X_conds_dict,var_cutoff=self.var_cutoff)
+
+        return self
+
+    def transform(self,X):
+        '''
+        Projects data into unique and shared subspaces.
+
+        Arguments:
+            X - (pd.DataFrame)
+                DataFrame containing data (e.g. firing rates) and condition (e.g. task)
+
+        Returns:
+            (pd.DataFrame) New DataFrame with an additional column containing the
+                projected data (column names are f'{self.signal}_{subspace_name}')
+        '''
+        assert hasattr(self,'subspaces'), "Model not yet fitted"
+
+        return (
+            X
+            .assign(**{
+                f'{self.signal}_{subspace_name}':
+                    lambda df, proj_mat=proj_mat: df[self.signal].apply(
+                        lambda arr: arr @ proj_mat
+                    )
+                for subspace_name,proj_mat in self.subspaces.items()
+            })
+            .assign(**{
+                f'{self.signal}_split':
+                    lambda df: df[self.signal].apply(
+                        lambda arr: arr @ np.column_stack(tuple(self.subspaces.values()))
+                    )
+            })
+        )

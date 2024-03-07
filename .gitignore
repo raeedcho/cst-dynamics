@@ -1,13 +1,17 @@
 *.egg-info
 src/__pycache__
 scripts/__pycache__
+tests/__pycache__
 /.quarto/
 reports/
 _freeze/
 results/2022_sfn_poster
 results/2023_ncm_poster
 results/dagmar_talk
+results/2023_cst_grant_report
 results/subspace_splitting
 results/lfads/Prez_20220721_RTTCST
 env
 .DS_Store
+
+/env/

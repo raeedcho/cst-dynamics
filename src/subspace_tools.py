@@ -6,7 +6,7 @@ from sklearn.decomposition import PCA, TruncatedSVD
 from sklearn.linear_model import LinearRegression
 import scipy.linalg as la
 
-from . import util
+from . import util,dekodec
 
 def find_joint_subspace(df,signal,condition='task',num_dims=15,remove_mean=False,orthogonalize=True):
     '''
@@ -61,7 +61,22 @@ def find_joint_subspace(df,signal,condition='task',num_dims=15,remove_mean=False
 
     return vt.T
 
-def subspace_overlap_index(X,Y,num_dims=10):
+def frac_var_explained_by_subspace(X,subspace):
+    '''
+    Calculate the fraction of variance explained by a subspace
+
+    Arguments:
+        X - (numpy array) data to project
+        subspace - (numpy array) basis set to project onto
+
+    Returns:
+        (float) fraction of variance explained by subspace
+    '''
+    X_var = np.var(X,axis=0).sum()
+    X_cov = np.cov(X,rowvar=False)
+    return np.trace(subspace.T @ X_cov @ subspace)/X_var
+
+def subspace_overlap_index(X,Y,var_cutoff=0.99):
     '''
     Calculate the subspace overlap index (from Elsayed et al. 2016)
     between two data matrices (X and Y), given a number of dimensions
@@ -76,72 +91,64 @@ def subspace_overlap_index(X,Y,num_dims=10):
         (float) subspace overlap index
     '''
     assert X.shape[1] == Y.shape[1], 'X and Y must have same number of features'
-    assert num_dims <= X.shape[1], 'num_dims must be less than or equal to number of features in X'
     assert X.ndim == 2, 'X must be a 2D array'
     assert Y.ndim == 2, 'Y must be a 2D array'
 
-    # mean subtract X and Y
-    X_hat = X - X.mean(axis=0)
-    Y_hat = Y - Y.mean(axis=0)
+    return frac_var_explained_by_subspace(X,Y_potent)
 
-    # get PCA of X and Y
-    pca_X = PCA(n_components=num_dims)
-    pca_Y = PCA(n_components=num_dims)
-    pca_X.fit(X_hat)
-    pca_Y.fit(Y_hat)
-
-    # calculate overlap
-    X_var = np.sum(pca_X.explained_variance_)
-    X_cov = np.cov(X_hat.T)
-    Y_axes = pca_Y.components_
-    soi = np.trace(Y_axes @ X_cov @ Y_axes.T)/X_var
-
-    return soi
-
-def bootstrap_subspace_overlap(td_grouped,signal='M1_rates',num_bootstraps=100,num_dims=10):
+def bootstrap_subspace_overlap(signal_grouped,num_bootstraps=100,var_cutoff=0.99):
     '''
     Compute subspace overlap for each pair of tasks and epochs,
     with bootstrapping to get distributions
 
     Arguments:
-        td_grouped: (pandas.GroupBy object) trial data grouped by some key (e.g. task, epoch)
+        signal_grouped: (pandas.Series.GroupBy object) trial data signal grouped by some key (e.g. task, epoch)
         num_bootstraps: (int) number of bootstraps to perform
 
     Returns:
         pandas.DataFrame: dataframe with rows corresponding to each bootstrap
             of subspace overlap computed for pairs of group keys
     '''
-    td_boots = []
+    signal_boots = []
     for boot_id in range(num_bootstraps):
-        data_td = td_grouped.agg(**{
-            signal: (signal,lambda rates : np.row_stack(rates.sample(frac=1,replace=True)))
-        })
-        proj_td = td_grouped.agg(**{
-            signal: (signal,lambda rates : np.row_stack(rates.sample(frac=1,replace=True)))
-        })
-        td_pairs = data_td.join(
-            proj_td,
-            how='cross',
-            lsuffix='_data',
-            rsuffix='_proj',
+        data_td = signal_grouped.agg(
+            lambda rates : np.row_stack(rates.sample(frac=1,replace=True))
+        ).rename('signal')
+        proj_td = signal_grouped.agg(
+            lambda rates : np.row_stack(rates.sample(frac=1,replace=True))
+        ).rename('signal')
+        signal_pairs = (
+            data_td
+            .reset_index()
+            .join(
+                proj_td.reset_index(),
+                how='cross',
+                lsuffix='_data',
+                rsuffix='_proj',
+            )
         )
 
-        td_pairs['boot_id'] = boot_id
-        td_boots.append(td_pairs)
+        signal_pairs['boot_id'] = boot_id
+        signal_boots.append(signal_pairs)
     
-    td_boots = pd.concat(td_boots).reset_index(drop=True)
-    
-    td_boots['subspace_overlap'] = [
-        subspace_overlap_index(data,proj,num_dims=num_dims)
-        for data,proj in zip(td_boots[f'{signal}_data'],td_boots[f'{signal}_proj'])
-    ]
+    signal_boots = (
+        pd.concat(signal_boots).reset_index(drop=True)
+        .assign(**{
+            'subspace_overlap' : lambda df : df.apply(
+                lambda row : subspace_overlap_index(row['signal_data'],row['signal_proj'],var_cutoff=var_cutoff),
+                axis=1
+            ),
+            'subspace_overlap_rand' : lambda df : df.apply(
+                lambda row : subspace_overlap_index(util.random_array_like(row['signal_data']),row['signal_proj'],var_cutoff=var_cutoff),
+                axis=1
+            )
+        })
+    )
 
-    td_boots['subspace_overlap_rand'] = [
-        subspace_overlap_index(data,util.random_array_like(data),num_dims=num_dims)
-        for data,proj in zip(td_boots[f'{signal}_data'],td_boots[f'{signal}_proj'])
-    ]
+    return signal_boots
 
-    return td_boots
+def calculate_fraction_variance(arr,col):
+    return np.var(arr[:,col])/np.var(arr,axis=0).sum()
 
 def calc_projected_variance(X,proj_matrix):
     '''

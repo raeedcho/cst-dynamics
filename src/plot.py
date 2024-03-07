@@ -4,6 +4,8 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
 import seaborn as sns
 
+from . import subspace_tools
+
 def make_trial_raster(trial, ax=None, sig='M1_spikes', events=None, ref_event_idx=0):
     '''
     Make a raster plot for a given trial
@@ -92,7 +94,7 @@ def make_trial_raster(trial, ax=None, sig='M1_spikes', events=None, ref_event_id
 
     return ax
 
-def plot_hand_trace(trial,ax=None,timesig='trialtime'):
+def plot_hand_trace(trial,ax=None,timesig='trialtime',trace_component=0):
     if ax is None:
         ax = plt.gca()
 
@@ -120,7 +122,7 @@ def plot_hand_trace(trial,ax=None,timesig='trialtime'):
         for idx_targ_start,idx_targ_end,targ_loc in zip(
             trial['idx_rtgoCueTimes'].astype(int),
             trial['idx_rtHoldTimes'].astype(int),
-            trial['rt_locations'][:,0]-trial['ct_location'][0],
+            trial['rt_locations'][:,trace_component]-trial['ct_location'][trace_component],
         ):
             if not np.isnan(idx_targ_start) and not np.isnan(idx_targ_end):
                 ax.add_patch(Rectangle(
@@ -141,7 +143,7 @@ def plot_hand_trace(trial,ax=None,timesig='trialtime'):
     # cursor
     ax.plot(
         trial[timesig],
-        trial['rel_cursor_pos'][:,0],
+        trial['rel_cursor_pos'][:,trace_component],
         c='b',
         alpha=0.5,
     )
@@ -149,7 +151,7 @@ def plot_hand_trace(trial,ax=None,timesig='trialtime'):
     # hand
     ax.plot(
         trial[timesig],
-        trial['rel_hand_pos'][:,0],
+        trial['rel_hand_pos'][:,trace_component],
         c='k',
     )
     ax.set_ylim(-60,60)
@@ -157,17 +159,105 @@ def plot_hand_trace(trial,ax=None,timesig='trialtime'):
     ax.set_xlabel(timesig)
     sns.despine(ax=ax,trim=True)
 
-def plot_hand_velocity(trial,ax=None,timesig='trialtime'):
+def plot_hand_acc(trial,ax=None,timesig='trialtime',trace_component=0):
     if ax is None:
         ax = plt.gca()
 
     ax.plot([trial[timesig][0],trial[timesig][-1]],[0,0],'-k')
     ax.plot(
         trial[timesig],
-        trial['hand_vel'][:,0],
+        trial['hand_acc'][:,trace_component],
         color='k',
     )
 
-    ax.set_ylabel('Hand position (cm)')
+    ax.set_ylabel('Hand acceleration (cm/s^2)')
     ax.set_xlabel(timesig)
     sns.despine(ax=ax,trim=True)
+
+def plot_hand_velocity(trial,ax=None,timesig='trialtime',trace_component=0):
+    if ax is None:
+        ax = plt.gca()
+
+    ax.plot([trial[timesig][0],trial[timesig][-1]],[0,0],'-k')
+    ax.plot(
+        trial[timesig],
+        trial['hand_vel'][:,trace_component],
+        color='k',
+    )
+
+    ax.set_ylabel('Hand velocity (cm/s)')
+    ax.set_xlabel(timesig)
+    sns.despine(ax=ax,trim=True)
+
+def plot_split_subspace_variance(td,signal='lfads_rates_joint_pca'):
+    compared_var = (
+        td
+        .groupby('task')
+        [[f'{signal}',f'{signal}_split']]
+        .agg([
+            lambda s,col=col: subspace_tools.calculate_fraction_variance(np.row_stack(s),col)
+            for col in range(40)
+        ])
+        .rename({f'{signal}': 'unsplit',f'{signal}_split': 'split'},axis=1,level=0)
+        .rename(lambda label: label.strip('<lambda_>'),axis=1,level=1)
+        .unstack()
+        .reset_index()
+        .rename({
+            'level_0': 'neural space',
+            'level_1':'component',
+            0: 'fraction variance'
+        },axis=1)
+    )
+
+    sns.catplot(
+        data=compared_var,
+        y='component',
+        x='fraction variance',
+        hue='task',
+        kind='bar',
+        col='neural space',
+        sharex=True,
+        sharey=True,
+        aspect=0.5,
+        height=6,
+    )
+
+import plotly.express as px
+def plot_single_trial_split_var(td,signal='lfads_rates_joint_pca'):
+    subspace_var = (
+        td
+        .assign(**{
+            'CST space variance': lambda df: df.apply(
+                lambda row: np.var(row[f'{signal}_cst_unique'],axis=0).sum()/np.var(row[f'{signal}'],axis=0).sum(),
+                axis=1,
+            ),
+            'RTT space variance': lambda df: df.apply(
+                lambda row: np.var(row[f'{signal}_rtt_unique'],axis=0).sum()/np.var(row[f'{signal}'],axis=0).sum(),
+                axis=1,
+            ),
+        })
+    )
+    
+    fig = px.scatter(
+        subspace_var,
+        x='CST space variance',
+        y='RTT space variance',
+        color='task',
+        hover_data=['trial_id'],
+        marginal_x='violin',
+        marginal_y='violin',
+        template='plotly_white',
+        width=600,
+        height=600,
+        color_discrete_sequence=px.colors.qualitative.T10,
+    )
+    fig.show()
+    print(subspace_var.set_index('trial_id').loc[11,['task','CST space variance','RTT space variance']])
+
+    # return sns.relplot(
+    #     data=subspace_var,
+    #     x='CST space variance',
+    #     y='RTT space variance',
+    #     hue='task',
+    #     hue_order=['CST','RTT'],
+    # )

@@ -8,12 +8,9 @@ from . import lfads_helpers
 
 def load_clean_data(
     file_prefix,
-    verbose=False,
-    keep_unsorted=False,
-    bin_size=0.010,
-    firing_rates_func= lambda td: pyaldata.add_firing_rates(td,method='smooth',std=0.05,backend='convolve'),
     epoch_fun = lambda trial: slice(0,trial['hand_pos'].shape[0]),
-    lfads_params = None,
+    preload_params = None,
+    chop_merge_params = None,
     ):
     """
     Loads and cleans COCST trial data, given a file query
@@ -23,6 +20,37 @@ def load_clean_data(
     TODO: set up an initial script to move data into the 'data' folder of the project (maybe with DVC)
     """
     
+    assert preload_params is not None, "preload_params must be specified"
+
+    td = preload_data(file_prefix=file_prefix,**preload_params)
+
+    if chop_merge_params is not None:
+        td = lfads_helpers.add_lfads_data_to_td(td,file_prefix=file_prefix,**chop_merge_params)
+
+    td = (
+        td
+        # do sequential trimming to maximally avoid edge effects from kinematic signals
+        .pipe(trim_nans, ref_signals=['rel_hand_pos'])
+        .pipe(fill_kinematic_signals)
+        .pipe(trim_nans,ref_signals=['lfads_rates'])
+        .pipe(
+            pyaldata.restrict_to_interval,
+            epoch_fun = epoch_fun,
+            warn_per_trial=True,
+        )
+        .pipe(add_trial_time,ref_event='idx_goCueTime',column_name='Time from go cue (s)')
+        .pipe(add_trial_time,ref_event='idx_pretaskHoldTime',column_name='Time from task cue (s)')
+    )
+
+    return td
+
+def preload_data(
+    file_prefix,
+    verbose=False,
+    keep_unsorted=False,
+    bin_size=0.01,
+    firing_rates_func= lambda td: pyaldata.add_firing_rates(td,method='smooth',std=0.05,backend='convolve'),
+):
     datapath = Path('../data/trial_data/')
     filenames = list(datapath.glob(f'{file_prefix}*.mat'))
     if len(filenames) == 0:
@@ -60,62 +88,9 @@ def load_clean_data(
             divide_by_bin_size=True,
             verbose=verbose
         )
+        .pipe(rebin_data,new_bin_size=bin_size)
         .pipe(firing_rates_func)
     )
-
-    if lfads_params is not None:
-        trial_ids = lfads_tf2.utils.load_data(
-            Path("../data/pre-lfads/"),
-            prefix=file_prefix,
-            signal="trial_id",
-            merge_tv=True
-        )[0].astype(int)
-
-        posterior_paths = list(Path("../results/lfads").glob(f"{file_prefix}*"))
-        if len(posterior_paths) == 0:
-            raise FileNotFoundError(f"No LFADS posterior found for {file_prefix}")
-        elif len(posterior_paths) > 1:
-            raise ValueError(f"Multiple LFADS posteriors found for {file_prefix}")
-        post_data = lfads_tf2.utils.load_posterior_averages(
-            posterior_paths[0],
-            merge_tv=True
-        )
-
-        td = (
-            td
-            .pipe(rebin_data,new_bin_size=lfads_params['bin_size'])
-            .pipe(
-                lfads_helpers.add_lfads_rates,
-                post_data.rates/lfads_params['bin_size'],
-                chopped_trial_ids=trial_ids,
-                overlap=lfads_params['overlap'],
-                new_sig_name='lfads_rates',
-            )
-            .pipe(
-                lfads_helpers.add_lfads_rates,
-                post_data.gen_inputs/lfads_params['bin_size'],
-                chopped_trial_ids=trial_ids,
-                overlap=lfads_params['overlap'],
-                new_sig_name='lfads_inputs',
-            )
-        )
-
-    td = (
-        td
-        # do sequential trimming to maximally avoid edge effects from kinematic signals
-        .pipe(trim_nans, ref_signals=['rel_hand_pos'])
-        .pipe(fill_kinematic_signals)
-        .pipe(trim_nans,ref_signals=['lfads_rates'])
-        .pipe(
-            pyaldata.restrict_to_interval,
-            epoch_fun = epoch_fun,
-            warn_per_trial=True,
-        )
-        .pipe(rebin_data,new_bin_size=bin_size)
-        .pipe(add_trial_time,ref_event='idx_goCueTime',column_name='Time from go cue (s)')
-        .pipe(add_trial_time,ref_event='idx_pretaskHoldTime',column_name='Time from task cue (s)')
-    )
-
     return td
 
 @pyaldata.copy_td
@@ -355,123 +330,6 @@ def explode_td(td):
 
     return exp_td
 
-def crystalize_dataframe(td,sig_guide=None):
-    '''
-    Transforms a pyaldata-style dataframe into a normal one, where each row
-    is a time point in a trial. This is useful for some manipulations,
-    especially those that involve melting the dataframe.
-
-    Arguments:
-        - td (pd.DataFrame): dataframe in form of PyalData
-        - sig_guide (dict): dictionary of signals with keys corresponding to the signal names
-            in the pyaldata dataframe and values corresponding to the names of each column
-            of the individual signal in the dataframe. If None, all signals are included,
-            with columns labeled 0-N, where N is the number of columns in the signal.
-
-    Returns:
-        - (pd.DataFrame): crystallized dataframe with hierarchical index on both axes:
-            axis 0: trial id, time bin in trial
-            axis 1: signal name, signal dimension
-    '''
-    # TODO: check that signals are in the dataframe and are valid signals
-
-    if sig_guide is None:
-        sig_guide = {sig: None for sig in pyaldata.get_time_varying_fields(td)}
-
-    if type(sig_guide) is list:
-        sig_guide = {sig: None for sig in sig_guide}
-
-    assert type(sig_guide) is dict, "sig_guide must be a dictionary"
-
-    df = pd.concat(
-        [
-            pd.concat([pd.DataFrame(trial[sig],columns=guide) for sig,guide in sig_guide.items()], axis=1, keys=sig_guide.keys()) 
-            for _,trial in td.iterrows()
-        ],
-        axis=0,
-        keys=td['trial_id'],
-    )
-    df.index.rename('Time bin',level=1,inplace=True)
-    return df
-
-def extract_metaframe(td,metacols=None):
-    '''
-    Extracts a metaframe from a trial dataframe.
-
-    Arguments:
-        - td (pd.DataFrame): dataframe in form of PyalData
-        - metacols (list of str): columns to include in the metaframe
-            Default behavior (if None) is to get all columns that are not time-varying signals
-
-    Returns:
-        - (pd.DataFrame): metaframe with hierarchical index on both axes:
-            axis 0: trial id
-            axis 1: column name
-    '''
-    if metacols is None:
-        metacols = set(td.columns) - set(pyaldata.get_time_varying_fields(td))
-
-    meta_df = td.filter(items=metacols).set_index('trial_id')
-    meta_df.columns = pd.MultiIndex.from_product([meta_df.columns,['meta']])
-    return meta_df
-
-def extract_unit_guides(td,array='MC'):
-    '''
-    Extracts a unit guide dataframe from a trial data dataframe.
-
-    Note: if this is Prez data, all we need is MC unit guide, since other arrays
-    are subsets of MC (M1 is channels 33-96 and PMd is channels 1-32;97-128).
-
-    Arguments:
-        - td (pd.DataFrame): dataframe in form of PyalData
-        - array (str): name of array to extract unit guide from
-
-    Returns:
-        - (pd.DataFrame): unit guide dataframe with index 0-N, where N is the number
-            of units in the array and columns {'channel','unit','array'}
-    '''
-    
-    if td['monkey'].iloc[0] == 'Prez':
-        def which_array(channel):
-            if 32<channel<=96:
-                return 'M1'
-            else:
-                return 'PMd'
-    else:
-        Warning('Array splitting only defined for Prez data currently.')
-        def which_array(channel):
-            return array
-
-    unit_guide = (
-        pd.DataFrame(
-            td[f'{array}_unit_guide'].values[0],
-            columns=['channel','unit'],
-        )
-        .assign(array=lambda x: x['channel'].apply(which_array))
-    )
-    return unit_guide
-
-def extract_trial_events(td,events=None):
-    '''
-    Extracts a trial events dataframe from a trial data dataframe.
-
-    Arguments:
-        - td (pd.DataFrame): dataframe in form of PyalData
-        - events (list of str): events to include in the trial events dataframe
-            Default behavior (if None) is to get all events in the dataframe
-
-    Returns:
-        - (pd.DataFrame): trial events dataframe with hierarchical index on both axes:
-            axis 0: trial id
-            axis 1: event name
-    '''
-    if events is None:
-        events = set(td.columns) - set(pyaldata.get_time_varying_fields(td))
-
-    events_df = td.filter(items=events).set_index('trial_id')
-    events_df.columns = pd.MultiIndex.from_product([events_df.columns,['event']])
-    return events_df
-
 @pyaldata.copy_td
 def add_trial_time(trial_data, ref_event=None, column_name="trialtime"):
     """
@@ -498,6 +356,12 @@ def add_trial_time(trial_data, ref_event=None, column_name="trialtime"):
         ]
 
     return trial_data
+
+@pyaldata.copy_td
+def add_trial_state(trial_data,column_name='trial state'):
+    return td.assign(**{
+        column_name: pd.NA
+    })
 
 @pyaldata.copy_td
 def remove_artifact_trials(trial_data, rate_thresh=350,verbose=False):
@@ -539,7 +403,7 @@ def remove_artifact_trials(trial_data, rate_thresh=350,verbose=False):
 
     if verbose:
         print(f'{len(bad_trials)} trials with high firing rates removed. Dropping trials with IDs:')
-        print(td_temp.loc[bad_trials,"trial_id"].values)
+        print(td_temp.loc[list(bad_trials),"trial_id"].values)
 
     return trial_data.drop(index=bad_trials)
     

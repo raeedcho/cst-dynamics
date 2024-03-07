@@ -1,9 +1,10 @@
-lfads_prep:
-  window_len: 60
-  overlap: 20
-  bin_size: 0.010
+preload:
   keep_unsorted: False
   verbose: True
+chop_merge:
+  bin_size: 0.010
+  window_len: 60
+  overlap: 20
 dynamics_analysis:
   num_dims: 10
   bin_size: 0.030
@@ -21,3 +22,6 @@ submovement_decomposition:
   bin_size: 0.010
   keep_unsorted: True
   verbose: True
+subspace_split:
+  train_size: 0.5
+  save_train_data: False
