@@ -13,3 +13,4 @@ from . import decoder_analysis
 from . import dekodec
 from . import crystal
 from . import rnel_preproc
+from . import munge

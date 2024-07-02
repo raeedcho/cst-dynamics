@@ -1,4 +1,5 @@
 import scipy
+import mat73
 import numpy as np
 import pandas as pd
 
@@ -25,10 +26,13 @@ def load_ts_data(
     variable_name: str='TS',
     bin_size: float=20e-3,
 ):
-    mat = scipy.io.loadmat(
-        filename,
-        simplify_cells=True,
-    )
+    try:
+        mat = scipy.io.loadmat(
+            filename,
+            simplify_cells=True,
+        )
+    except NotImplementedError:
+        mat = mat73.loadmat(filename,verbose=False)
 
     return (
         pd.DataFrame(mat[variable_name])
@@ -38,6 +42,7 @@ def load_ts_data(
         .assign(session_time = lambda df: get_session_times(df,bin_size))
         [index_cols+signal_cols]
         .explode(['session_time','state']+signal_cols)
+        .astype({'trial': int})
         .set_index(index_cols)
         .pipe(crystallize_dataframe)
     )
@@ -45,17 +50,22 @@ def load_ts_data(
 def name_states(TS):
     def name_states_row(row):
         row_copy = row.copy()
-        row_copy['state'] = row['state_labels'][row['state']-1]
+        if type(row['state_labels'][-1]) is list:
+            state_labels = np.array([label[0] for label in row['state_labels']])
+        else:
+            state_labels = row['state_labels']
+        row_copy['state'] = state_labels[(row['state']-1).astype('uint8')]
         return row_copy
 
     def condition_state_labels(label_list):
         def state_map(label):
             if (
-                type(label) is not str
+                (type(label) is not str and type(label) is not np.str_)
+                or label==''
                 or label=='FSafe1'
                 or label=='FailSafe1'
             ):
-                return 'pretrial'
+                return 'intertrial'
             else:
                 return label.lower()
             
