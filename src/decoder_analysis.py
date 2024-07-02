@@ -225,7 +225,7 @@ def trial_dropout_analysis(
     - target_name: Target column to predict
 
     Returns:
-    - Dropout analysis plot
+    - list of scores as trials are removed
     - Ordered list of removed trials (by trial_id)
     """
 
@@ -275,3 +275,34 @@ def trial_dropout_analysis(
         df_train = drop_trial(df_train,dropped_trials[dropped_trial_num])
 
     return dropped_scores, dropped_trials
+
+def get_trial_importance(
+    df_train: pd.DataFrame,
+    df_test: pd.DataFrame,
+    signal: str,
+    target_name: str,
+)->pd.DataFrame:
+    """
+    Get the importance of each trial in the training set by training a decoder
+    on individual trials of the training set and scoring with the test set.
+    """
+    def train_score(train_set: pd.DataFrame,test_set: pd.DataFrame) -> float:
+        return (
+            LinearRegression()
+            .fit(
+                np.row_stack(train_set[signal]),
+                train_set[target_name],
+            )
+            .score(
+                np.row_stack(test_set[signal]),
+                test_set[target_name],
+            )
+        )
+
+    trial_importance = (
+        df_train
+        .groupby('trial_id')
+        .apply(lambda trial: train_score(trial,df_test))
+    )
+
+    return trial_importance
