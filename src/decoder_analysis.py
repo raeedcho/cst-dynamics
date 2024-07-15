@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.linear_model import LinearRegression
 from sklearn.model_selection import GroupShuffleSplit
+from sklearn.metrics import explained_variance_score, r2_score
 
 def get_test_labels(df,test_size=0.25):
     gss = GroupShuffleSplit(n_splits=1,test_size=test_size)
@@ -13,29 +14,28 @@ def get_test_labels(df,test_size=0.25):
     ))
     return np.isin(np.arange(df.shape[0]),test)
 
-def fit_models(df: pd.DataFrame,signal,target_name='True velocity'):
+def fit_models(df: pd.DataFrame,signal,target_name='True velocity',sample_size=30000):
     subsampled_training_df = (
         df
         .groupby('Test set')
         .get_group(False)
         .groupby('task')
-        .sample(n=30000)
+        .sample(n=sample_size)
     )
     # individual models
     models = {}
-    for task in df['task'].unique():
+    for task,task_df in subsampled_training_df.groupby('task'):
         models[task] = LinearRegression()
-        train_df = subsampled_training_df.groupby('task').get_group(task)
         models[task].fit(
-            np.row_stack(train_df[signal]),
-            train_df[target_name],
+            np.row_stack(task_df[signal].values),
+            task_df[target_name],
         )
 
     # joint models
     models['Dual'] = LinearRegression()
-    train_df = df.loc[~df['Test set']].groupby('task').sample(n=30000)
+    train_df = df.loc[~df['Test set']].groupby('task').sample(n=sample_size)
     models['Dual'].fit(
-        np.row_stack(train_df[signal]),
+        np.row_stack(train_df[signal].values),
         train_df[target_name],
     )
 
@@ -45,19 +45,25 @@ def model_predict(df,signal,models):
     ret_df = df.copy()
     for model_name,model in models.items():
         ret_df = ret_df.assign(**{
-            f'{model_name} calibrated': model.predict(np.row_stack(ret_df[signal]))
+            f'{model_name} calibrated': model.predict(np.row_stack(ret_df[signal].values))
         })
     return ret_df
 
 def score_models(df,signal,models,target_name='True velocity'):
+    score_func = r2_score
+
     scores = pd.Series(index=pd.MultiIndex.from_product(
-        [df['task'].unique(),models.keys()],
+        [df.groupby('task').groups.keys(),models.keys()],
         names=['Test data','Train data']
     ))
-    for task in df['task'].unique():
+    for task,task_df in df.groupby('task'):
         for model_name, model in models.items():
-            test_df = df.loc[df['Test set'] & (df['task']==task)]
-            scores[(task,model_name)] = model.score(np.row_stack(test_df[signal]),test_df[target_name])
+            test_df = task_df.groupby('Test set').get_group(True)
+            scores[(task,model_name)] = model.score(np.row_stack(test_df[signal].values),test_df[target_name])
+            # scores[(task,model_name)] = score_func(
+            #     test_df[target_name],
+            #     model.predict(np.row_stack(test_df[signal].values)),
+            # )
     
     return scores
 
@@ -66,7 +72,7 @@ def score_trials(df,signal,models,target_name='True velocity'):
         df
         .groupby(['task','trial_id'])
         .apply(lambda trial: pd.Series({
-            f'{model_name} score': model.score(np.row_stack(trial[signal]),trial[target_name])
+            f'{model_name} score': model.score(np.row_stack(trial[signal].values),trial[target_name])
             for model_name,model in models.items()
         }))
     )
