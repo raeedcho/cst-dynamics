@@ -42,28 +42,30 @@ def get_state_transition_times(state_list: pd.Series, timecol: str='session_time
     
     return state_transition_times
 
-def reindex_from_event(data: pd.DataFrame,event: str):
-    event_times = (
-        data
-        .reset_index(level='state')
-        ['state']
-        .pipe(get_state_transition_times,timecol='trial_time')
-        .xs(event,level='new_state')
-    )
-
+def reindex_from_event_times(data: pd.DataFrame,event_times: pd.DataFrame, timecol: str='trial_time'):
     new_data = (
         data
-        .reset_index(level='trial_time')
+        .reset_index(level=timecol)
         .assign(**{
-            'relative time': lambda df: df['trial_time']-event_times,
-            'phase': event,
+            'relative time': lambda df: df[timecol]-event_times,
         })
-        .drop(columns='trial_time',level='signal')
-        .set_index(['phase','relative time'],append=True)
+        .drop(columns=timecol,level='signal')
+        .set_index('relative time',append=True)
         .swaplevel('relative time',1)
     )
 
     return new_data
+
+def reindex_from_event(data: pd.DataFrame,event: str, timecol: str='trial_time'):
+    event_times = (
+        data
+        .reset_index(level='state')
+        ['state']
+        .pipe(get_state_transition_times,timecol=timecol)
+        .xs(event,level='new_state')
+    )
+
+    return reindex_from_event_times(data,event_times)
 
 def get_epoch_data(data: pd.DataFrame,epochs: dict):
     '''
@@ -87,6 +89,8 @@ def get_epoch_data(data: pd.DataFrame,epochs: dict):
         (
             data
             .pipe(reindex_from_event,event)
+            .assign(phase=event)
+            .set_index('phase',append=True)
             .loc[(slice(None),event_slice),:]
         )
         for event,event_slice in epochs.items()
