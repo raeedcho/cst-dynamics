@@ -159,9 +159,9 @@ def orthogonalize_spaces(X_conds,cond_unique_projmats,backend='pymanopt'):
         subspaces['shared'] = np.eye(next(iter(X_conds.values())).shape[1])
         return subspaces
 
-    Z = torch.from_numpy(np.row_stack(tuple(X_conds.values())))
+    Z = torch.from_numpy(np.row_stack(tuple(X_conds.values())).astype('float64'))
     Z_uniques = torch.column_stack([
-        Z @ torch.from_numpy(projmat)
+        Z @ torch.from_numpy(projmat.astype('float64'))
         for projmat in cond_unique_projmats.values()
     ])
 
