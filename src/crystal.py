@@ -172,7 +172,8 @@ def extract_trial_event_times(td,events=None):
 
     events_df = (
         td
-        .set_index(['monkey','session_date','trial_id'])
+        #.set_index(['monkey','session_date','trial_id'])
+        .set_index('trial_id')
         .filter(items=events)
         .rename_axis('event',axis=1)
         .rename(columns=lambda col: col.replace('idx_','').replace('Times','').replace('Time',''))
@@ -181,7 +182,10 @@ def extract_trial_event_times(td,events=None):
         .dropna()
         .sort_values()
         .sort_index(level='trial_id',sort_remaining=False)
-    ) * td['bin_size'].iloc[0]
+        .astype(int)
+        .apply(lambda x: x*td['bin_size'].iloc[0])
+        .pipe(pd.to_timedelta,unit='s')
+    )
     # events_df.columns = pd.MultiIndex.from_product([events_df.columns,['event']])
     return events_df
     
