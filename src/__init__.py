@@ -15,3 +15,4 @@ from . import crystal
 from . import rnel_preproc
 from . import munge
 from . import crystal_models
+from . import extract_smile_data
