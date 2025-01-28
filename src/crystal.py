@@ -211,3 +211,22 @@ def hierarchical_assign(df,assign_dict):
             )
         )
     )
+
+def sample_trials(tf: pd.DataFrame,timecol: str='trial time',**sample_kwargs):
+    '''
+    Sample trials from a crystallized dataframe
+
+    Arguments:
+        - tf (pd.DataFrame): crystallized dataframe
+        - timecol (str): name of the time column
+        - sample_kwargs: arguments to pass to tf.sample
+
+    Returns:
+        - (pd.DataFrame): sampled dataframe
+    '''
+    return (
+        tf
+        .unstack(level=timecol)
+        .sample(**sample_kwargs)
+        .stack(level=timecol)
+    )
