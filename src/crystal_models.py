@@ -194,3 +194,35 @@ class BaselineShifter(BaseEstimator,TransformerMixin):
             .agg(lambda s: np.nanmean(s,axis=0))
         )
         return X - baseline
+
+class VarimaxTransformer(BaseEstimator,TransformerMixin):
+    def __init__(self, tol=1e-6, max_iter=100):
+        self.tol = tol
+        self.max_iter = max_iter
+
+    def fit(self,X,y=None):
+        """
+        Return rotation matrix that implements varimax (or quartimax) rotation.
+
+        Adapted from _ortho_rotation from scikit-learn _factor_analysis.py module.
+        """
+        nrow, ncol = X.shape
+        rotation_matrix = np.eye(ncol)
+        var = 0
+
+        for _ in range(self.max_iter):
+            comp_rot = np.dot(X, rotation_matrix)
+            tmp = comp_rot * np.transpose((comp_rot**2).sum(axis=0) / nrow)
+            u, s, v = np.linalg.svd(np.dot(X.T, comp_rot**3 - tmp))
+            rotation_matrix = np.dot(u, v)
+            var_new = np.sum(s)
+            if var != 0 and var_new < var * (1 + self.tol):
+                break
+            var = var_new
+
+        # return np.dot(X, rotation_matrix).T
+        self.rotation_matrix_ = rotation_matrix
+        return self
+
+    def transform(self,X):
+        return X @ self.rotation_matrix_
